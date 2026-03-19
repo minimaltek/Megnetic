@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Magnetic uses the microphone so metaballs can react to music and sounds around you.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Magnetic uses the photo library to let you set custom environment maps and save recorded videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Magnetic saves recorded videos of your metaball visualizations to your photo library.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Magnetic uses the local network to discover AirPlay devices like TVs and speakers.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+	</array>
+</dict>
+</plist>

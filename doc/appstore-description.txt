@@ -1,0 +1,61 @@
+App Name: Magnetic
+
+Subtitle: Real-Time Metaball Visualizer
+
+---
+
+Description:
+
+Magnetic is a mesmerizing real-time 3D metaball visualizer powered by Metal shaders.
+
+Watch liquid metal shapes merge, split, and flow — all rendered in real time on your device. React to music through your microphone, or let the built-in BPM engine drive the motion.
+
+FEATURES
+
+- Real-time ray-marched 3D metaballs
+- 5 material modes: Black, Mercury, Glass, Custom Color, Wireframe
+- 12+ HDRI environment maps including studio, nature, and planetary textures
+- Custom photo environment maps — use your own images
+- Custom background colors with built-in color picker
+- Audio-reactive mode with microphone input
+- Manual BPM control for precise rhythm sync
+- 9 orbit patterns: Random, Circle, Sphere, Torus, Spiral, Satellite, DNA, Figure-8, Wave
+- Adjustable ball count, size, spacing, and orbit range
+- Grid mode for structured arrangements
+- Camera mode with automatic cinematic movement
+- Double-tap to randomize patterns, colors, and configurations
+- Screen recording to save visualizations
+- Green screen mode for video compositing
+- Minimal dark UI with full parameter control
+
+Perfect as a live visual companion for music, a meditation tool, a creative screensaver, or just something beautiful to watch.
+
+---
+
+What's New (Version 1.0):
+
+Initial release.
+
+---
+
+Keywords:
+
+metaball,visualizer,3d,metal,audio,reactive,music,shader,liquid,ambient
+
+---
+
+Category: Entertainment
+Secondary Category: Music
+
+---
+
+Support URL: (use privacy policy URL)
+Privacy Policy URL: (host privacy-policy.html)
+
+---
+
+Age Rating: 4+
+
+---
+
+Pricing: Free
