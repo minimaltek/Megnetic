@@ -13,10 +13,10 @@ enum PresetManager {
     /// All AppStorage keys that constitute a preset
     static let settingKeys: [String] = [
         "tapOrbit", "tapColor", "tapBall", "camMode",
-        "ballCount", "isMicEnabled", "materialMode", "colorHue",
+        "ballCount", "isMicEnabled", "materialMode", "colorHue", "colorBri",
         "envMapIndex", "envIntensity", "isBPMEnabled", "orbitPattern",
         "ballSize", "bgMode", "bgCustomHue", "bgCustomSat",
-        "bgCustomBri", "envLocked", "autoHue", "spacing",
+        "bgCustomBri", "envLocked", "autoHue", "autoBgHue", "spacing",
         "orbitRange", "gridMode", "fps", "manualBPM",
         "recEnabled", "consoleMode", "brightnessSync", "brightnessSyncMax",
         "blendK"

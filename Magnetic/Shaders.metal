@@ -33,6 +33,7 @@ struct SimParams {
     float  cameraDistance;
     uint   materialMode;   // 0=black, 1=mercury, 2=wireframe, 3=custom color, 4=glass
     float  colorHue;       // 0..1 hue for custom color mode
+    float  colorBri;       // 0..1 brightness for custom color mode
     uint   envMapIndex;    // 0=none (procedural), 1-5=HDRI maps
     float  envIntensity;   // HDRI brightness multiplier
     uint   bgMode;         // 0=white, 1=black, 2=green, 3=custom color
@@ -419,13 +420,8 @@ fragment float4 metaballFragment(
         // Camera-relative: use reflection as-is (world space = camera-locked)
         envRefl = refl;
     } else if (params.envLocked == 1) {
-        // Fixed: transform into camera-local space for horizontal rotation,
-        // but preserve world-space Y so sky stays up and ground stays down.
-        float3x3 camMatInv = transpose(camMat);
-        float3 localRefl = camMatInv * refl;
-        // Keep world Y for vertical orientation (天地固定)
-        envRefl = float3(localRefl.x, refl.y, localRefl.z);
-        envRefl = normalize(envRefl);
+        // H-FIX: placeholder — handled in sampling below (like FRONT)
+        envRefl = refl;
     } else {
         // Front: placeholder — FRONT mode samples directly below
         envRefl = refl;
@@ -436,7 +432,20 @@ fragment float4 metaballFragment(
     bool hasEnvMap = (params.envMapIndex > 0);
     float3 envSample = float3(0.0);
     if (hasEnvMap) {
-        if (params.envLocked == 2) {
+        if (params.envLocked == 1) {
+            // H-FIX: based on FRONT, but horizontal rotation follows world space.
+            // Vertical (theta) = camera-local Y → sky stays up regardless of camera tilt
+            // Horizontal (phi) = world-space reflection → ENV rotates when camera pans
+            float3x3 camMatInv = transpose(camMat);
+            float3 local = normalize(camMatInv * refl);
+            local.y = -local.y;  // correct reflection's Y-flip (same as FRONT)
+            float theta = asin(clamp(local.y, -1.0, 1.0));
+            // Horizontal angle from world-space reflection
+            float phi = atan2(refl.x, refl.z);
+            float2 hfixUV = float2(phi / (2.0 * M_PI_F) + 0.5,
+                                   0.5 - theta / M_PI_F);
+            envSample = envMap.sample(envSampler, hfixUV).rgb * params.envIntensity;
+        } else if (params.envLocked == 2) {
             // FRONT: use reflection for natural env spread across surface,
             // but flip Y in camera-local space to correct mirror inversion.
             float3x3 camMatInv = transpose(camMat);
@@ -485,7 +494,7 @@ fragment float4 metaballFragment(
         
     } else if (params.materialMode == 3) {
         // --- Custom color mode ---
-        float3 baseColor = hsv2rgb(params.colorHue, 0.8, 0.9);
+        float3 baseColor = hsv2rgb(params.colorHue, 1.0, params.colorBri);
         
         float spec1 = pow(max(dot(N, H1), 0.0), 200.0);
         float spec2 = pow(max(dot(N, H2), 0.0), 120.0);
@@ -541,17 +550,17 @@ fragment float4 metaballFragment(
         // Sample background/environment through the refracted ray
         float3 refractColor;
         if (hasEnvMap) {
-            // Sample HDRI through refraction
-            float3 envRefractDir;
-            if (params.envLocked == 0) {
-                envRefractDir = exitRefract;
-            } else if (params.envLocked == 1) {
-                float3x3 camMatT = float3x3(camRight, camUp, camFwd);
-                float3x3 camMatInv = transpose(camMatT);
-                float3 localR = camMatInv * exitRefract;
-                envRefractDir = normalize(float3(localR.x, exitRefract.y, localR.z));
-            }
-            if (params.envLocked == 2) {
+            if (params.envLocked == 1) {
+                // H-FIX: same as reflection — camera-local Y for theta, world XZ for phi
+                float3x3 camMatInv = transpose(camMat);
+                float3 localR = normalize(camMatInv * exitRefract);
+                localR.y = -localR.y;
+                float theta = asin(clamp(localR.y, -1.0, 1.0));
+                float phi = atan2(exitRefract.x, exitRefract.z);
+                float2 hfixUV = float2(phi / (2.0 * M_PI_F) + 0.5,
+                                       0.5 - theta / M_PI_F);
+                refractColor = envMap.sample(envSampler, hfixUV).rgb * params.envIntensity;
+            } else if (params.envLocked == 2) {
                 // FRONT: camera-local UV for refraction (same math as reflection)
                 float3x3 camMatT = float3x3(camRight, camUp, camFwd);
                 float3x3 camMatInv = transpose(camMatT);
@@ -562,7 +571,7 @@ fragment float4 metaballFragment(
                                         0.5 - theta / M_PI_F);
                 refractColor = envMap.sample(envSampler, frontUV).rgb * params.envIntensity;
             } else {
-                refractColor = sampleEnvMap(envRefractDir, envMap, envSampler) * params.envIntensity;
+                refractColor = sampleEnvMap(exitRefract, envMap, envSampler) * params.envIntensity;
             }
         } else {
             // Procedural background through refraction

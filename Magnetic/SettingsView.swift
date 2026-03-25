@@ -32,6 +32,7 @@ struct SettingsView: View {
     @Binding var ballSize: Double
     @Binding var materialMode: Int
     @Binding var colorHue: Double
+    @Binding var colorBri: Double
     @Binding var envMapIndex: Int
     @Binding var envIntensity: Double
     @Binding var customEnvImages: [UIImage?]
@@ -42,6 +43,7 @@ struct SettingsView: View {
     @Binding var bgCustomBri: Double
     @Binding var envLocked: Int
     @Binding var autoHue: Bool
+    @Binding var autoBgHue: Bool
     @Binding var spacing: Double
     @Binding var orbitRange: Double
     @Binding var gridMode: Bool
@@ -59,6 +61,8 @@ struct SettingsView: View {
     @Binding var lockSize: Bool
     @Binding var lockSpacing: Bool
     @Binding var lockOrbit: Bool
+    @Binding var gainMode: Int          // 0=AUTO, 1=MANUAL
+    @Binding var manualGain: Double
     @Binding var originalPhotoImages: [UIImage?]
     var onLoadPreset: (() -> Void)? = nil
     var onSavePreset: ((Int, @escaping (UIImage?) -> Void) -> Void)? = nil
@@ -83,7 +87,6 @@ struct SettingsView: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var imageForCropping: UIImage? = nil
     @State private var showPhotoPicker: Bool = false
-    @State private var showBgColorPicker = false
     @State private var activePhotoSlot: Int = 0
     @State private var slotOccupied: [Bool] = (0..<12).map { PresetManager.isSlotOccupied($0) }
     @State private var slotThumbnails: [UIImage?] = (0..<12).map { PresetManager.loadThumbnail(from: $0) }
@@ -181,6 +184,11 @@ struct SettingsView: View {
                         customEnvImages[activePhotoSlot] = croppedImage
                         customEnvImageVersions[activePhotoSlot] += 1
                         envMapIndex = 13 + activePhotoSlot
+                        ContentView.saveCustomEnvImage(
+                            cropped: croppedImage,
+                            original: originalPhotoImages[activePhotoSlot],
+                            slot: activePhotoSlot
+                        )
                         imageForCropping = nil
                     },
                     onCancel: {
@@ -212,62 +220,69 @@ struct SettingsView: View {
                             : Theme.accent
                         let selectedFg: Color = index == 2 ? .white : index == 3 ? .white : Theme.bg
                         
-                        if index == 3 {
-                            Button {
-                                bgMode = 3
-                                showBgColorPicker = true
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: bgIcons[index])
-                                        .font(.system(size: 16))
-                                        .frame(width: 44, height: 44)
-                                        .background(
-                                            bgMode == index ? selectedBg : Color(hue: bgCustomHue, saturation: bgCustomSat, brightness: bgCustomBri).opacity(0.4),
-                                            in: RoundedRectangle(cornerRadius: 8)
-                                        )
-                                        .foregroundStyle(bgMode == index ? selectedFg : Theme.dimmed)
-                                    
-                                    Text(bgNames[index])
-                                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(bgMode == index ? Theme.text : Theme.dimmed)
-                                        .tracking(1)
-                                }
+                        Button {
+                            bgMode = index
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: bgIcons[index])
+                                    .font(.system(size: 16))
+                                    .frame(width: 44, height: 44)
+                                    .background(
+                                        bgMode == index ? selectedBg
+                                            : index == 3 ? Color(hue: bgCustomHue, saturation: bgCustomSat, brightness: bgCustomBri).opacity(0.4)
+                                            : Theme.surface,
+                                        in: RoundedRectangle(cornerRadius: 8)
+                                    )
+                                    .foregroundStyle(bgMode == index ? selectedFg : Theme.dimmed)
+                                
+                                Text(bgNames[index])
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(bgMode == index ? Theme.text : Theme.dimmed)
+                                    .tracking(1)
                             }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                        } else {
-                            Button {
-                                bgMode = index
-                            } label: {
-                                VStack(spacing: 6) {
-                                    Image(systemName: bgIcons[index])
-                                        .font(.system(size: 16))
-                                        .frame(width: 44, height: 44)
-                                        .background(
-                                            bgMode == index ? selectedBg : Theme.surface,
-                                            in: RoundedRectangle(cornerRadius: 8)
-                                        )
-                                        .foregroundStyle(bgMode == index ? selectedFg : Theme.dimmed)
-                                    
-                                    Text(bgNames[index])
-                                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(bgMode == index ? Theme.text : Theme.dimmed)
-                                        .tracking(1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
                         }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
                     }
                 }
-                .sheet(isPresented: $showBgColorPicker) {
-                    BgColorPickerSheet(
-                        hue: $bgCustomHue,
-                        sat: $bgCustomSat,
-                        bri: $bgCustomBri
-                    )
-                    .presentationDetents([.medium])
-                    .presentationBackground(Color(white: 0.06))
+                
+                if bgMode == 3 {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Spacer()
+                            
+                            Text("HUE")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Theme.label)
+                                .tracking(1)
+                            
+                            Button {
+                                autoBgHue.toggle()
+                            } label: {
+                                Text("AUTO")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(autoBgHue ? Theme.bg : Theme.dimmed)
+                                    .tracking(1)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        autoBgHue ? Color(hue: bgCustomHue, saturation: bgCustomSat, brightness: bgCustomBri) : Theme.surface,
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        if !autoBgHue {
+                            Slider(value: $bgCustomHue, in: 0...1)
+                                .tint(Color(hue: bgCustomHue, saturation: 0.8, brightness: 0.9))
+                        }
+                        
+                        parameterRow(label: "BRI", value: String(format: "%.0f%%", bgCustomBri * 100)) {
+                            Slider(value: $bgCustomBri, in: 0...1)
+                                .tint(Color(hue: bgCustomHue, saturation: 0.8, brightness: bgCustomBri))
+                        }
+                    }
                 }
                 
                 thinDivider()
@@ -279,6 +294,8 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         ForEach(0..<materialDisplayOrder.count, id: \.self) { index in
                             let mode = materialDisplayOrder[index]
+                            let isCLR = mode == 3
+                            let clrColor = Color(hue: colorHue, saturation: 1.0, brightness: colorBri)
                             Button {
                                 materialMode = mode
                             } label: {
@@ -287,7 +304,9 @@ struct SettingsView: View {
                                         .font(.system(size: 16))
                                         .frame(width: 44, height: 44)
                                         .background(
-                                            materialMode == mode ? Theme.accent : Theme.surface,
+                                            materialMode == mode
+                                                ? (isCLR ? clrColor : Theme.accent)
+                                                : (isCLR ? clrColor.opacity(0.4) : Theme.surface),
                                             in: RoundedRectangle(cornerRadius: 8)
                                         )
                                         .foregroundStyle(materialMode == mode ? Theme.bg : Theme.dimmed)
@@ -324,7 +343,7 @@ struct SettingsView: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(
-                                        autoHue ? Theme.accent : Theme.surface,
+                                        autoHue ? Color(hue: colorHue, saturation: 1.0, brightness: colorBri) : Theme.surface,
                                         in: Capsule()
                                     )
                             }
@@ -334,6 +353,11 @@ struct SettingsView: View {
                         if !autoHue {
                             Slider(value: $colorHue, in: 0...1)
                                 .tint(Color(hue: colorHue, saturation: 0.8, brightness: 0.9))
+                        }
+                        
+                        parameterRow(label: "BRI", value: String(format: "%.0f%%", colorBri * 100)) {
+                            Slider(value: $colorBri, in: 0...1)
+                                .tint(Color(hue: colorHue, saturation: 1.0, brightness: colorBri))
                         }
                     }
                 }
@@ -481,13 +505,13 @@ struct SettingsView: View {
                     HStack {
                         Spacer()
                         
-                        Text("ENV")
+                        Text("ENV WRAP")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.label)
                             .tracking(1)
                         
                         HStack(spacing: 2) {
-                            ForEach(Array(["FREE", "FIXED", "FRONT"].enumerated()), id: \.offset) { index, name in
+                            ForEach(Array(["FREE", "H-FIX", "FRONT"].enumerated()), id: \.offset) { index, name in
                                 Button {
                                     envLocked = index
                                 } label: {
@@ -593,7 +617,7 @@ struct SettingsView: View {
     private var motionTab: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("DOUBLE TAP")
+                sectionHeader("DOUBLE TAP RANDOM")
                 
                 HStack(spacing: 8) {
                     doubleTapToggle(name: "ORBIT", icon: "arrow.trianglehead.2.clockwise", isOn: $tapOrbit)
@@ -722,6 +746,45 @@ struct SettingsView: View {
                 }
                 
                 if isMicEnabled {
+                    thinDivider()
+                    
+                    // Gain mode: AUTO / MANUAL
+                    HStack {
+                        Spacer()
+                        
+                        Text("GAIN")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.label)
+                            .tracking(1)
+                        
+                        HStack(spacing: 2) {
+                            ForEach(Array(["AUTO", "MANUAL"].enumerated()), id: \.offset) { index, name in
+                                Button {
+                                    gainMode = index
+                                } label: {
+                                    Text(name)
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(gainMode == index ? Theme.bg : Theme.dimmed)
+                                        .tracking(0.5)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            gainMode == index ? Theme.accent : Theme.surface,
+                                            in: Capsule()
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    
+                    if gainMode == 1 {
+                        parameterRow(label: "GAIN", value: String(format: "%.1f", manualGain)) {
+                            Slider(value: $manualGain, in: 0.5...5.0, step: 0.1)
+                                .tint(Theme.accent)
+                        }
+                    }
+                    
                     thinDivider()
                     
                     // Brightness sync: boost env brightness based on mic input level
@@ -1002,172 +1065,4 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Custom Color Picker
 
-struct BgColorPickerSheet: View {
-    @Binding var hue: Double
-    @Binding var sat: Double
-    @Binding var bri: Double
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer().frame(height: 8)
-            
-            // Color wheel
-            ColorWheelView(hue: $hue, sat: $sat)
-                .frame(width: 150, height: 150)
-            
-            // Brightness slider
-            BrightnessSlider(bri: $bri, hue: hue, sat: sat)
-                .frame(height: 24)
-                .padding(.horizontal, 40)
-            
-            // Preview + OK
-            HStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(hue: hue, saturation: sat, brightness: bri))
-                    .frame(width: 42, height: 42)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(white: 0.25), lineWidth: 1)
-                    )
-                
-                Spacer()
-                
-                Button {
-                    dismiss()
-                } label: {
-                    Text("OK")
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-                }
-            }
-            .padding(.horizontal, 40)
-            
-            Spacer()
-        }
-        .background(Color(white: 0.06))
-    }
-}
-
-// MARK: - Color Wheel (Hue × Saturation circle)
-
-private struct ColorWheelView: View {
-    @Binding var hue: Double
-    @Binding var sat: Double
-    
-    var body: some View {
-        GeometryReader { geo in
-            let size = min(geo.size.width, geo.size.height)
-            let radius = size / 2
-            
-            ZStack {
-                // Hue: angular gradient around the circle
-                AngularGradient(
-                    gradient: Gradient(colors: (0...12).map {
-                        Color(hue: Double($0) / 12.0, saturation: 1, brightness: 1)
-                    }),
-                    center: .center
-                )
-                .clipShape(Circle())
-                
-                // Saturation: white center fading to clear at edges
-                RadialGradient(
-                    gradient: Gradient(colors: [.white, .white.opacity(0)]),
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: size / 2
-                )
-                .clipShape(Circle())
-                
-                // Selection indicator
-                Circle()
-                    .stroke(Color.white, lineWidth: 2.5)
-                    .background(Circle().fill(Color(hue: hue, saturation: sat, brightness: 1.0)))
-                    .frame(width: 24, height: 24)
-                    .shadow(color: .black.opacity(0.5), radius: 3, x: 0, y: 1)
-                    .position(indicatorPosition(radius: radius, center: CGPoint(x: radius, y: radius)))
-            }
-            .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        updateFromPoint(value.location, radius: radius, center: CGPoint(x: radius, y: radius))
-                    }
-            )
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-    
-    private func indicatorPosition(radius: CGFloat, center: CGPoint) -> CGPoint {
-        let angle = hue * 2 * .pi
-        let dist = sat * Double(radius)
-        return CGPoint(
-            x: center.x + CGFloat(cos(angle)) * CGFloat(dist),
-            y: center.y + CGFloat(sin(angle)) * CGFloat(dist)
-        )
-    }
-    
-    private func updateFromPoint(_ point: CGPoint, radius: CGFloat, center: CGPoint) {
-        let dx = Double(point.x - center.x)
-        let dy = Double(point.y - center.y)
-        let dist = min(sqrt(dx * dx + dy * dy), Double(radius))
-        let angle = atan2(dy, dx)
-        hue = (angle / (2 * .pi) + 1).truncatingRemainder(dividingBy: 1.0)
-        sat = dist / Double(radius)
-    }
-}
-
-// MARK: - Brightness Slider
-
-private struct BrightnessSlider: View {
-    @Binding var bri: Double
-    let hue: Double
-    let sat: Double
-    
-    var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            let height = geo.size.height
-            
-            ZStack(alignment: .leading) {
-                // Gradient track: full color → black
-                RoundedRectangle(cornerRadius: height / 2)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(hue: hue, saturation: sat, brightness: 1.0),
-                                Color.black
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: height / 2)
-                            .stroke(Color(white: 0.20), lineWidth: 1)
-                    )
-                
-                // Thumb
-                Circle()
-                    .fill(Color(hue: hue, saturation: sat, brightness: bri))
-                    .frame(width: height - 4, height: height - 4)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
-                    .offset(x: (1 - bri) * Double(width - height) + 2)
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let fraction = max(0, min(1, Double(value.location.x / width)))
-                        bri = 1 - fraction
-                    }
-            )
-        }
-    }
-}

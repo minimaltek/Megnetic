@@ -62,6 +62,7 @@ struct SimParams {
     var cameraDistance: Float = 4.0
     var materialMode: UInt32 = 0    // 0=black, 1=mercury, 2=wireframe, 3=custom color
     var colorHue: Float = 0         // 0..1 hue for custom color mode
+    var colorBri: Float = 0.9       // 0..1 brightness for custom color mode
     var envMapIndex: UInt32 = 0     // 0=none (procedural), 1-5=HDRI maps
     var envIntensity: Float = 1.0   // HDRI brightness multiplier
     var bgMode: UInt32 = 0          // 0=white, 1=black, 2=green, 3=custom color

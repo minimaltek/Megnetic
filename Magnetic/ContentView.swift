@@ -24,11 +24,15 @@ struct ContentView: View {
     @AppStorage("tapBall") private var tapBall: Bool = true
     @AppStorage("camMode") private var camMode: Bool = true
     
-    // micSensitivity removed — now auto-gain in AudioEngine
+    // Audio gain settings
+    @AppStorage("gainMode") private var gainMode: Int = 0      // 0=AUTO, 1=MANUAL
+    @AppStorage("manualGain") private var manualGain: Double = 3.0
+    
     @AppStorage("ballCount") private var ballCount: Double = 10
     @AppStorage("isMicEnabled") private var isMicEnabled: Bool = false
     @AppStorage("materialMode") private var materialMode: Int = 0
     @AppStorage("colorHue") private var colorHue: Double = 0
+    @AppStorage("colorBri") private var colorBri: Double = 0.9
     @AppStorage("envMapIndex") private var envMapIndex: Int = 0
     @AppStorage("envIntensity") private var envIntensity: Double = 1.0
     @AppStorage("isBPMEnabled") private var isBPMEnabled: Bool = true
@@ -43,6 +47,7 @@ struct ContentView: View {
     @AppStorage("bgCustomBri") private var bgCustomBri: Double = 0.5
     @AppStorage("envLocked") private var envLocked: Int = 0  // 0=FREE, 1=FIXED, 2=FRONT
     @AppStorage("autoHue") private var autoHue: Bool = false
+    @AppStorage("autoBgHue") private var autoBgHue: Bool = false
     @AppStorage("spacing") private var spacing: Double = 1.0
     @AppStorage("orbitRange") private var orbitRange: Double = 1.0
     @AppStorage("gridMode") private var gridMode: Bool = false
@@ -103,6 +108,8 @@ struct ContentView: View {
                 if orbitRange > 2.0 { orbitRange = 2.0 }
                 if bgMode > 3 { bgMode = 1 }  // fallback to BLK
                 // Apply saved settings to simulation and audio engine on launch
+                audioEngine.gainMode = gainMode
+                audioEngine.manualGainValue = Float(manualGain)
                 simulation.reactivity = audioEngine.effectiveGain
                 simulation.ballSizeMultiplier = Float(ballSize)
                 simulation.spacingMultiplier = Float(spacing)
@@ -116,6 +123,7 @@ struct ContentView: View {
                 if isMicEnabled {
                     audioEngine.requestPermissionAndStart()
                 }
+                loadCustomEnvImages()
             }
             // reactivity is now driven by auto-gain in the render loop
             .onChange(of: ballCount) { newValue in
@@ -164,6 +172,12 @@ struct ContentView: View {
                     // Restore user's spacing setting
                     simulation.spacingMultiplier = Float(spacing)
                 }
+            }
+            .onChange(of: gainMode) { newValue in
+                audioEngine.gainMode = newValue
+            }
+            .onChange(of: manualGain) { newValue in
+                audioEngine.manualGainValue = Float(newValue)
             }
             .onChange(of: scenePhase) { newPhase in
                 isInBackground = (newPhase != .active)
@@ -229,7 +243,7 @@ struct ContentView: View {
     
     private var mainContent: some View {
         ZStack {
-            MetalMetaballView(simulation: $simulation, isPaused: (showSettings && !screenshotPending) || isInBackground, materialMode: materialMode, colorHue: colorHue, envMapIndex: envMapIndex, envIntensity: envIntensity, customEnvImages: customEnvImages, customEnvImageVersions: customEnvImageVersions, audioEngine: isMicEnabled ? audioEngine : nil, isBPMEnabled: isBPMEnabled, bgMode: bgMode, bgColor: bgCustomRGB, envLocked: envLocked, blendK: blendK, autoHue: autoHue, fps: fps, manualBPM: manualBPM, brightnessSync: brightnessSync, brightnessSyncMax: brightnessSyncMax, onDoubleTap: {
+            MetalMetaballView(simulation: $simulation, isPaused: (showSettings && !screenshotPending) || isInBackground, materialMode: materialMode, colorHue: colorHue, colorBri: colorBri, envMapIndex: envMapIndex, envIntensity: envIntensity, customEnvImages: customEnvImages, customEnvImageVersions: customEnvImageVersions, audioEngine: isMicEnabled ? audioEngine : nil, isBPMEnabled: isBPMEnabled, bgMode: bgMode, bgColor: bgCustomRGB, autoBgHue: autoBgHue, bgCustomHue: bgCustomHue, bgCustomSat: bgCustomSat, bgCustomBri: bgCustomBri, envLocked: envLocked, blendK: blendK, autoHue: autoHue, fps: fps, manualBPM: manualBPM, brightnessSync: brightnessSync, brightnessSyncMax: brightnessSyncMax, onDoubleTap: {
                     handleDoubleTap()
                 }, viewCameraDistance: camMode ? Float(viewCameraDistance) : nil, onPinchDistance: { dist in
                     if camMode {
@@ -468,7 +482,10 @@ struct ContentView: View {
         }
         if !lockSize { ballSize = Double.random(in: 0.3...0.75) }
         if !lockSpacing { spacing = Double.random(in: 0.5...2.0) }
-        if !lockOrbit { orbitRange = Double.random(in: 0.3...2.0) }
+        if !lockOrbit {
+            // 60% chance of max orbit size
+            orbitRange = Double.random(in: 0..<1) < 0.6 ? 2.0 : Double.random(in: 0.3...2.0)
+        }
     }
     
     private var settingsButton: some View {
@@ -492,6 +509,7 @@ struct ContentView: View {
             ballSize: $ballSize,
             materialMode: $materialMode,
             colorHue: $colorHue,
+            colorBri: $colorBri,
             envMapIndex: $envMapIndex,
             envIntensity: $envIntensity,
             customEnvImages: $customEnvImages,
@@ -502,6 +520,7 @@ struct ContentView: View {
             bgCustomBri: $bgCustomBri,
             envLocked: $envLocked,
             autoHue: $autoHue,
+            autoBgHue: $autoBgHue,
             spacing: $spacing,
             orbitRange: $orbitRange,
             gridMode: $gridMode,
@@ -519,7 +538,8 @@ struct ContentView: View {
             lockSize: $lockSize,
             lockSpacing: $lockSpacing,
             lockOrbit: $lockOrbit,
-
+            gainMode: $gainMode,
+            manualGain: $manualGain,
             originalPhotoImages: $originalPhotoImages,
             onLoadPreset: { resyncAfterPresetLoad() },
             onSavePreset: { slotIndex, completion in
@@ -538,6 +558,39 @@ struct ContentView: View {
         .presentationDragIndicator(.visible)
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         .interactiveDismissDisabled(false)
+    }
+    
+    // MARK: - Custom ENV Image Persistence
+    
+    private static let envImageDir: URL = {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CustomEnv", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    
+    private func loadCustomEnvImages() {
+        for slot in 0..<3 {
+            let croppedURL = Self.envImageDir.appendingPathComponent("env_cropped_\(slot).jpg")
+            let originalURL = Self.envImageDir.appendingPathComponent("env_original_\(slot).jpg")
+            if let data = try? Data(contentsOf: croppedURL), let image = UIImage(data: data) {
+                customEnvImages[slot] = image
+                customEnvImageVersions[slot] += 1
+            }
+            if let data = try? Data(contentsOf: originalURL), let image = UIImage(data: data) {
+                originalPhotoImages[slot] = image
+            }
+        }
+    }
+    
+    static func saveCustomEnvImage(cropped: UIImage, original: UIImage?, slot: Int) {
+        guard slot >= 0 && slot < 3 else { return }
+        if let data = cropped.jpegData(compressionQuality: 0.85) {
+            try? data.write(to: envImageDir.appendingPathComponent("env_cropped_\(slot).jpg"))
+        }
+        if let orig = original, let data = orig.jpegData(compressionQuality: 0.85) {
+            try? data.write(to: envImageDir.appendingPathComponent("env_original_\(slot).jpg"))
+        }
     }
     
     // MARK: - Preset Load Sync

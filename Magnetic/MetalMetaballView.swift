@@ -16,6 +16,7 @@ struct MetalMetaballView: UIViewRepresentable {
     var isPaused: Bool = false
     var materialMode: Int = 0
     var colorHue: Double = 0
+    var colorBri: Double = 0.9
     var envMapIndex: Int = 0
     var envIntensity: Double = 1.0
     var customEnvImages: [UIImage?] = [nil, nil, nil]
@@ -26,6 +27,10 @@ struct MetalMetaballView: UIViewRepresentable {
     var isBPMEnabled: Bool = true
     var bgMode: Int = 0
     var bgColor: (Float, Float, Float) = (0, 0, 0)  // custom background RGB
+    var autoBgHue: Bool = false
+    var bgCustomHue: Double = 0.6
+    var bgCustomSat: Double = 0.8
+    var bgCustomBri: Double = 0.5
     var envLocked: Int = 0  // 0=FREE, 1=FIXED, 2=FRONT
     var blendK: Double = 0.35
     var autoHue: Bool = false
@@ -77,12 +82,17 @@ struct MetalMetaballView: UIViewRepresentable {
         context.coordinator.simulation = simulation
         context.coordinator.materialMode = UInt32(materialMode)
         context.coordinator.colorHue = Float(colorHue)
+        context.coordinator.colorBri = Float(colorBri)
         context.coordinator.envMapIndex = UInt32(envMapIndex)
         context.coordinator.envIntensity = Float(envIntensity)
         context.coordinator.audioEngine = audioEngine
         context.coordinator.isBPMEnabled = isBPMEnabled
         context.coordinator.bgMode = UInt32(bgMode)
         context.coordinator.bgColor = bgColor
+        context.coordinator.autoBgHue = autoBgHue
+        context.coordinator.bgCustomHue = Float(bgCustomHue)
+        context.coordinator.bgCustomSat = Float(bgCustomSat)
+        context.coordinator.bgCustomBri = Float(bgCustomBri)
         context.coordinator.envLocked = UInt32(envLocked)
         context.coordinator.blendK = Float(blendK)
         context.coordinator.autoHue = autoHue
@@ -527,16 +537,22 @@ final class MetaballRenderer: NSObject, MTKViewDelegate {
     // Material state (set by SwiftUI)
     var materialMode: UInt32 = 0
     var colorHue: Float = 0
+    var colorBri: Float = 0.9
     var envMapIndex: UInt32 = 0
     var envIntensity: Float = 1.0
     var bgMode: UInt32 = 0
     var bgColor: (Float, Float, Float) = (0, 0, 0)
+    var autoBgHue: Bool = false
+    var bgCustomHue: Float = 0.6
+    var bgCustomSat: Float = 0.8
+    var bgCustomBri: Float = 0.5
     var envLocked: UInt32 = 0
     var blendK: Float = 0.35
     var autoHue: Bool = false
     var fps: Int = 30
     var manualBPM: Float = 120
-    private var autoHueValue: Float = 0  // 0..1, cycles slowly
+    private var autoHueValue: Float = 0     // 0..1, cycles slowly (material)
+    private var autoBgHueValue: Float = 0   // 0..1, cycles slowly (background)
     private var manualBeatPhase: Double = 0  // 0..1, cycles at manual BPM rate
     
     // Mic-driven brightness boost (ramps up on orange/red input levels, decays on green)
@@ -768,10 +784,28 @@ final class MetaballRenderer: NSObject, MTKViewDelegate {
             micBrightnessBoost = 1.0
         }
         
-        // Auto hue: slowly cycle through all colors (~30s per full rotation)
+        // BPM-synced hue cycle duration:
+        // BPM 20 → 180s/cycle (3 min), BPM 200+ → 60s/cycle (1 min, fastest)
+        // Linear interpolation between these bounds
+        let clampedBPM = max(min(Double(simulation.detectedBPM), 200), 20)
+        let t = (clampedBPM - 20.0) / (200.0 - 20.0)  // 0..1
+        let hueCycleDuration = 180.0 - t * 120.0        // 180s → 60s
+        
+        // Auto hue: cycle through all colors, speed follows BPM
         if autoHue {
-            autoHueValue += dt / 30.0  // full cycle in 30 seconds
+            autoHueValue += dt / Float(hueCycleDuration)
             if autoHueValue > 1.0 { autoHueValue -= 1.0 }
+        }
+        
+        // Auto background hue: cycle bg color hue, keep user's saturation & brightness
+        if autoBgHue && bgMode == 3 {
+            autoBgHueValue += dt / Float(hueCycleDuration)
+            if autoBgHueValue > 1.0 { autoBgHueValue -= 1.0 }
+            let c = UIColor(hue: CGFloat(autoBgHueValue), saturation: CGFloat(bgCustomSat), brightness: CGFloat(bgCustomBri), alpha: 1)
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
+            c.getRed(&r, green: &g, blue: &b, alpha: nil)
+            bgColor = (Float(r), Float(g), Float(b))
+            view.clearColor = MTLClearColor(red: Double(r), green: Double(g), blue: Double(b), alpha: 1)
         }
         
         // Clamp dt to avoid large jumps (e.g. after unpause)
@@ -821,6 +855,7 @@ final class MetaballRenderer: NSObject, MTKViewDelegate {
             cameraDistance: cameraDistance,
             materialMode: materialMode,
             colorHue: autoHue ? autoHueValue : colorHue,
+            colorBri: colorBri,
             envMapIndex: envMapIndex,
             envIntensity: envIntensity * micBrightnessBoost,
             bgMode: bgMode,

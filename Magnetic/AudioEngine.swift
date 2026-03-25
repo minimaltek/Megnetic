@@ -40,10 +40,20 @@ final class AudioEngine: ObservableObject {
     private var hasPendingUpdate = false
     private var displayLink: CADisplayLink?
     
-    // Fixed gain (no auto-gain — human-ear-like linear response)
-    private let fixedGain: Float = 1.5
+    // Gain mode: 0 = AUTO (adaptive), 1 = MANUAL (slider)
+    var gainMode: Int = 0
+    var manualGainValue: Float = 3.0
+    
+    // Auto-gain state
+    private var noiseFloor: Float = 0.0        // slow-adapting ambient noise level
+    private var signalPeak: Float = 0.001      // fast-attack, slow-decay signal peak
+    private var smoothedAutoGain: Float = 1.5  // smoothed output gain to prevent pumping
+    private var autoGainInitialized = false
+    
     /// Current effective gain (readable for reactivity bridging)
-    var effectiveGain: Float { fixedGain }
+    var effectiveGain: Float {
+        gainMode == 0 ? smoothedAutoGain : manualGainValue
+    }
     
     private var beatDetector = BeatDetector()
     
@@ -109,8 +119,44 @@ final class AudioEngine: ObservableObject {
             let now = CACurrentMediaTime()
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                // Fixed gain — no auto-gain, linear response like human hearing
-                let gain = self.fixedGain
+                
+                // Compute current energy for auto-gain tracking
+                let currentEnergy = result.bass + result.mid * 0.7 + result.high * 0.3
+                
+                if self.gainMode == 0 {
+                    // AUTO gain: adaptive algorithm that mimics human hearing
+                    if !self.autoGainInitialized {
+                        self.noiseFloor = currentEnergy
+                        self.signalPeak = max(currentEnergy, 0.001)
+                        self.autoGainInitialized = true
+                    }
+                    
+                    // Noise floor: slow rise (adapts to rising ambient), fast fall (detects quieter env)
+                    if currentEnergy < self.noiseFloor {
+                        self.noiseFloor = self.noiseFloor * 0.95 + currentEnergy * 0.05
+                    } else {
+                        self.noiseFloor = self.noiseFloor * 0.9995 + currentEnergy * 0.0005
+                    }
+                    
+                    // Signal peak: fast rise (catch transients), slow decay
+                    if currentEnergy > self.signalPeak {
+                        self.signalPeak = self.signalPeak * 0.7 + currentEnergy * 0.3
+                    } else {
+                        self.signalPeak = self.signalPeak * 0.995 + currentEnergy * 0.005
+                    }
+                    
+                    // Compute target gain from dynamic range
+                    let dynamicRange = max(self.signalPeak - self.noiseFloor, 0.001)
+                    let targetOutput: Float = 0.4
+                    let rawGain = targetOutput / dynamicRange
+                    let clampedGain = min(max(rawGain, 0.5), 20.0)
+                    
+                    // Smooth gain changes: slow attack, moderate release
+                    let smoothAlpha: Float = clampedGain > self.smoothedAutoGain ? 0.02 : 0.05
+                    self.smoothedAutoGain += (clampedGain - self.smoothedAutoGain) * smoothAlpha
+                }
+                
+                let gain = self.effectiveGain
                 let bass = result.bass * gain
                 let mid = result.mid * gain
                 let high = result.high * gain
@@ -127,9 +173,10 @@ final class AudioEngine: ObservableObject {
                 let levelAlpha: Float = normalizedLevel > self.pendingInputLevel ? 0.6 : 0.15
                 self.pendingInputLevel = self.pendingInputLevel * (1.0 - levelAlpha) + normalizedLevel * levelAlpha
                 
-                // Feed beat detector with band-specific flux (bass + high only)
+                // Feed beat detector with multi-band flux
                 let beatResult = self.beatDetector.feed(
                     bassFlux: result.bassFlux * gain,
+                    midFlux: result.midFlux * gain,
                     highFlux: result.highFlux * gain,
                     bassEnergy: bass,
                     highEnergy: high,
@@ -203,7 +250,7 @@ final class BeatDetector {
     private let histogramBins = 300      // BPM histogram: 0.5 BPM resolution over 0-150 range mapped to 60-210
     private let histogramDecay: Float = 0.995  // moderate decay for stability
     private let minOSSForEstimation = 215 // ~5s at 43fps — require 5s of data before any tempo estimation
-    private let stabilityDuration: Double = 5.0 // BPM must be stable for 5s before being reported
+    private let stabilityDuration: Double = 3.0 // BPM must be stable for 3s before being reported
     
     // --- Onset Signal (ring buffer) ---
     private var oss: [Float]             // spectral flux onset strength signal
@@ -255,9 +302,9 @@ final class BeatDetector {
     }
     
     /// Feed band-specific flux for rhythm detection.
-    /// Only bass (kick) contributes to onset detection for accurate tempo tracking.
+    /// Multi-band weighted onset: bass (kick) + mid (snare) + high (hi-hat).
     /// ZCR (zero crossing rate) is used to discriminate music from speech/noise.
-    func feed(bassFlux: Float, highFlux: Float, bassEnergy: Float, highEnergy: Float, zcr: Float, timestamp: Double) -> Result {
+    func feed(bassFlux: Float, midFlux: Float, highFlux: Float, bassEnergy: Float, highEnergy: Float, zcr: Float, timestamp: Double) -> Result {
         // --- ZCR stability: music has consistent ZCR, speech/noise fluctuates ---
         let zcrAlpha: Float = 0.02
         zcrMean = zcrMean * (1 - zcrAlpha) + zcr * zcrAlpha
@@ -279,8 +326,8 @@ final class BeatDetector {
         lastTimestamp = timestamp
         timestampCount += 1
         
-        // --- Energy gate: ignore very quiet input (kick-only) ---
-        let totalPercussiveEnergy = bassEnergy
+        // --- Energy gate: ignore very quiet input (multi-band) ---
+        let totalPercussiveEnergy = bassEnergy + highEnergy * 0.3
         // Fast rise, faster fall — detects silence quickly
         if totalPercussiveEnergy > smoothEnergy {
             smoothEnergy = smoothEnergy * 0.9 + totalPercussiveEnergy * 0.1  // fast rise
@@ -289,9 +336,9 @@ final class BeatDetector {
         }
         let isLoud = smoothEnergy > energyGate
         
-        // --- Compose onset signal: bass flux (kick) only ---
-        // Kick-only detection for more accurate BPM on electronic/dance music
-        let onsetValue = isLoud ? (bassFlux * 2.0) : 0
+        // --- Compose onset signal: multi-band weighted ---
+        // Bass (kick) dominant, mid (snare) and high (hi-hat) for broader genre support
+        let onsetValue = isLoud ? (bassFlux * 1.2 + midFlux * 0.5 + highFlux * 0.3) : 0
         
         // Write to ring buffer
         oss[ossWriteIndex] = onsetValue
@@ -646,6 +693,7 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
         var high: Float
         var spectralFlux: Float      // full-band half-wave rectified spectral difference
         var bassFlux: Float          // spectral flux in bass band only (0–120 Hz)
+        var midFlux: Float           // spectral flux in mid band (120–2000 Hz)
         var highFlux: Float          // spectral flux in high band only (2000+ Hz)
         var zcr: Float               // zero crossing rate (0..1, normalized)
     }
@@ -684,7 +732,7 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
     func process(buffer: AVAudioPCMBuffer, sensitivity: Float) -> AnalysisResult {
         guard let fftSetup = fftSetup,
               let channelData = buffer.floatChannelData?[0] else {
-            return AnalysisResult(bass: 0, mid: 0, high: 0, spectralFlux: 0, bassFlux: 0, highFlux: 0, zcr: 0)
+            return AnalysisResult(bass: 0, mid: 0, high: 0, spectralFlux: 0, bassFlux: 0, midFlux: 0, highFlux: 0, zcr: 0)
         }
         
         let n = bufferSize
@@ -725,9 +773,20 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
         let bassEnd = min(Int(120.0 / freqRes), halfN)
         let midEnd = min(Int(2000.0 / freqRes), halfN)
         
-        // --- Spectral Flux (half-wave rectified) ---
+        // --- Log-compressed magnitudes for spectral flux (Percival & Tzanetakis) ---
+        // log(1 + γ * mag) enhances soft onsets (ghost notes, quiet snares)
+        // γ = 100 is standard in librosa/Essentia
+        var logMag = [Float](repeating: 0, count: halfN)
+        var gamma: Float = 100.0
+        vDSP_vsmul(magnitudes, 1, &gamma, &logMag, 1, vDSP_Length(halfN))
+        var one: Float = 1.0
+        vDSP_vsadd(logMag, 1, &one, &logMag, 1, vDSP_Length(halfN))
+        var logCount = Int32(halfN)
+        vvlogf(&logMag, logMag, &logCount)
+        
+        // --- Spectral Flux (half-wave rectified, on log-compressed magnitudes) ---
         var diff = [Float](repeating: 0, count: halfN)
-        vDSP_vsub(prevMagnitudes, 1, magnitudes, 1, &diff, 1, vDSP_Length(halfN))
+        vDSP_vsub(prevMagnitudes, 1, logMag, 1, &diff, 1, vDSP_Length(halfN))
         // Half-wave rectify: keep only positive differences (energy increases)
         var zero: Float = 0
         vDSP_vthres(diff, 1, &zero, &diff, 1, vDSP_Length(halfN))
@@ -744,6 +803,15 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
             bassFlux /= Float(bassEnd)
         }
         
+        // Mid-band flux (120–2000 Hz) — snare/melodic detection
+        var midFlux: Float = 0
+        if midEnd > bassEnd {
+            diff.withUnsafeBufferPointer { buf in
+                vDSP_sve(buf.baseAddress! + bassEnd, 1, &midFlux, vDSP_Length(midEnd - bassEnd))
+            }
+            midFlux /= Float(midEnd - bassEnd)
+        }
+        
         // High-band flux (2000+ Hz) — hi-hat detection
         var highFlux: Float = 0
         if halfN > midEnd {
@@ -753,8 +821,8 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
             highFlux /= Float(halfN - midEnd)
         }
         
-        // Store current magnitudes for next frame
-        memcpy(&prevMagnitudes, magnitudes, halfN * MemoryLayout<Float>.size)
+        // Store log-compressed magnitudes for next frame's flux calculation
+        memcpy(&prevMagnitudes, logMag, halfN * MemoryLayout<Float>.size)
         
         var bass: Float = 0, mid: Float = 0, high: Float = 0
         
@@ -779,6 +847,7 @@ nonisolated final class FFTProcessor: @unchecked Sendable {
             high: min(high * scale * 10.0, 3.0),
             spectralFlux: flux * scale,
             bassFlux: bassFlux * scale * 3.0,
+            midFlux: midFlux * scale * 4.0,
             highFlux: highFlux * scale * 5.0,
             zcr: zcr
         )
