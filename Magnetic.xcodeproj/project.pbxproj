@@ -9,12 +9,48 @@
 /* Begin PBXBuildFile section */
 		E25E9C152F66513300C850FC /* VideoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25E9C142F66513200C850FC /* VideoRecorder.swift */; };
 		E2BAD4322F6887C5002E08BC /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2BAD4312F6887C5002E08BC /* ImageCropView.swift */; };
+		E2FCB5842F7393DC00E37A91 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */; };
+		E2FCB5852F7393DC00E37A91 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5642F7393DC00E37A91 /* ContentView.swift */; };
+		E2FCB5872F7393DC00E37A91 /* MetaballSimulation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5672F7393DC00E37A91 /* MetaballSimulation.swift */; };
+		E2FCB5892F7393DC00E37A91 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5692F7393DC00E37A91 /* OnboardingView.swift */; };
+		E2FCB58A2F7393DC00E37A91 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56A2F7393DC00E37A91 /* PresetManager.swift */; };
+		E2FCB58B2F7393DC00E37A91 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56B2F7393DC00E37A91 /* SettingsView.swift */; };
+		E2FCB58C2F7393DC00E37A91 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56C2F7393DC00E37A91 /* Shaders.metal */; };
+		E2FCB58F2F73A16C00E37A91 /* PlatformTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB58E2F73A16B00E37A91 /* PlatformTypes.swift */; };
+		E2FCB5912F73A2FD00E37A91 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5902F73A2FD00E37A91 /* CameraController.swift */; };
+		E2FCB5932F73A34700E37A91 /* MetaballRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5922F73A34700E37A91 /* MetaballRenderer.swift */; };
+		E2FCB5AC2F73A72400E37A91 /* PlatformTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB58E2F73A16B00E37A91 /* PlatformTypes.swift */; };
+		E2FCB5AD2F73A72E00E37A91 /* PresetManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56A2F7393DC00E37A91 /* PresetManager.swift */; };
+		E2FCB5AE2F73A72E00E37A91 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56B2F7393DC00E37A91 /* SettingsView.swift */; };
+		E2FCB5AF2F73A72E00E37A91 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5692F7393DC00E37A91 /* OnboardingView.swift */; };
+		E2FCB5B02F73A72E00E37A91 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5642F7393DC00E37A91 /* ContentView.swift */; };
+		E2FCB5B12F73A72E00E37A91 /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB56C2F7393DC00E37A91 /* Shaders.metal */; };
+		E2FCB5B22F73A72E00E37A91 /* MetaballSimulation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5672F7393DC00E37A91 /* MetaballSimulation.swift */; };
+		E2FCB5B32F73A72E00E37A91 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5902F73A2FD00E37A91 /* CameraController.swift */; };
+		E2FCB5B42F73A72E00E37A91 /* VideoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25E9C142F66513200C850FC /* VideoRecorder.swift */; };
+		E2FCB5B52F73A72E00E37A91 /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2BAD4312F6887C5002E08BC /* ImageCropView.swift */; };
+		E2FCB5B62F73A72E00E37A91 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */; };
+		E2FCB5B72F73A72E00E37A91 /* MetaballRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5922F73A34700E37A91 /* MetaballRenderer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		E25E9C142F66513200C850FC /* VideoRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecorder.swift; sourceTree = "<group>"; };
 		E2BAD4312F6887C5002E08BC /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
 		E2C6D05D2F650B65007C1915 /* Magnetic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Magnetic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
+		E2FCB5642F7393DC00E37A91 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E2FCB5672F7393DC00E37A91 /* MetaballSimulation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaballSimulation.swift; sourceTree = "<group>"; };
+		E2FCB5692F7393DC00E37A91 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		E2FCB56A2F7393DC00E37A91 /* PresetManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetManager.swift; sourceTree = "<group>"; };
+		E2FCB56B2F7393DC00E37A91 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E2FCB56C2F7393DC00E37A91 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
+		E2FCB58E2F73A16B00E37A91 /* PlatformTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformTypes.swift; sourceTree = "<group>"; };
+		E2FCB5902F73A2FD00E37A91 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
+		E2FCB5922F73A34700E37A91 /* MetaballRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaballRenderer.swift; sourceTree = "<group>"; };
+		E2FCB5962F73A4A700E37A91 /* MetalMetaballView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalMetaballView.swift; sourceTree = "<group>"; };
+		E2FCB5972F73A4CE00E37A91 /* MouseHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseHandler.swift; sourceTree = "<group>"; };
+		E2FCB5982F73A4DE00E37A91 /* MagneticMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticMacApp.swift; sourceTree = "<group>"; };
+		E2FCB59D2F73A59C00E37A91 /* MagneticMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MagneticMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -25,6 +61,24 @@
 			);
 			target = E2C6D05C2F650B65007C1915 /* Magnetic */;
 		};
+		E2FCB5C42F73A74C00E37A91 /* Exceptions for "Magnetic" folder in "MagneticMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HDRI/2k_moon.jpg,
+				HDRI/flat_earth03.jpg,
+				HDRI/hdri_cloudy.hdr,
+				HDRI/hdri_garden.jpg,
+				HDRI/hdri_loft.jpg,
+				HDRI/hdri_morning.hdr,
+				HDRI/hdri_sky.jpg,
+				HDRI/hdri_studio.jpg,
+				HDRI/hdri_studio2.hdr,
+				HDRI/hdri_studio3.hdr,
+				HDRI/hdri_suburb.hdr,
+				HDRI/hdri_sunset.jpg,
+			);
+			target = E2FCB59C2F73A59C00E37A91 /* MagneticMac */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,14 +86,27 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				E2C6D07C2F651510007C1915 /* Exceptions for "Magnetic" folder in "Magnetic" target */,
+				E2FCB5C42F73A74C00E37A91 /* Exceptions for "Magnetic" folder in "MagneticMac" target */,
 			);
 			path = Magnetic;
+			sourceTree = "<group>";
+		};
+		E2FCB59E2F73A59C00E37A91 /* MagneticMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MagneticMac;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		E2C6D05A2F650B65007C1915 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E2FCB59A2F73A59C00E37A91 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -53,9 +120,10 @@
 			isa = PBXGroup;
 			children = (
 				E2C6D05F2F650B65007C1915 /* Magnetic */,
+				E2FCB59E2F73A59C00E37A91 /* MagneticMac */,
 				E2C6D05E2F650B65007C1915 /* Products */,
-				E25E9C142F66513200C850FC /* VideoRecorder.swift */,
-				E2BAD4312F6887C5002E08BC /* ImageCropView.swift */,
+				E2FCB5942F73A3A200E37A91 /* Shared */,
+				E2FCB5952F73A3A200E37A91 /* MagneticMac */,
 			);
 			sourceTree = "<group>";
 		};
@@ -63,8 +131,38 @@
 			isa = PBXGroup;
 			children = (
 				E2C6D05D2F650B65007C1915 /* Magnetic.app */,
+				E2FCB59D2F73A59C00E37A91 /* MagneticMac.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E2FCB5942F73A3A200E37A91 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				E2FCB58E2F73A16B00E37A91 /* PlatformTypes.swift */,
+				E2FCB5922F73A34700E37A91 /* MetaballRenderer.swift */,
+				E2FCB5902F73A2FD00E37A91 /* CameraController.swift */,
+				E2FCB5672F7393DC00E37A91 /* MetaballSimulation.swift */,
+				E2FCB56C2F7393DC00E37A91 /* Shaders.metal */,
+				E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */,
+				E2FCB5642F7393DC00E37A91 /* ContentView.swift */,
+				E2FCB56B2F7393DC00E37A91 /* SettingsView.swift */,
+				E2FCB56A2F7393DC00E37A91 /* PresetManager.swift */,
+				E2FCB5692F7393DC00E37A91 /* OnboardingView.swift */,
+				E2BAD4312F6887C5002E08BC /* ImageCropView.swift */,
+				E25E9C142F66513200C850FC /* VideoRecorder.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		E2FCB5952F73A3A200E37A91 /* MagneticMac */ = {
+			isa = PBXGroup;
+			children = (
+				E2FCB5962F73A4A700E37A91 /* MetalMetaballView.swift */,
+				E2FCB5972F73A4CE00E37A91 /* MouseHandler.swift */,
+				E2FCB5982F73A4DE00E37A91 /* MagneticMacApp.swift */,
+			);
+			path = MagneticMac;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -92,6 +190,28 @@
 			productReference = E2C6D05D2F650B65007C1915 /* Magnetic.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E2FCB59C2F73A59C00E37A91 /* MagneticMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E2FCB5A52F73A59D00E37A91 /* Build configuration list for PBXNativeTarget "MagneticMac" */;
+			buildPhases = (
+				E2FCB5992F73A59C00E37A91 /* Sources */,
+				E2FCB59A2F73A59C00E37A91 /* Frameworks */,
+				E2FCB59B2F73A59C00E37A91 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E2FCB59E2F73A59C00E37A91 /* MagneticMac */,
+			);
+			name = MagneticMac;
+			packageProductDependencies = (
+			);
+			productName = MagneticMac;
+			productReference = E2FCB59D2F73A59C00E37A91 /* MagneticMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -103,6 +223,9 @@
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					E2C6D05C2F650B65007C1915 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					E2FCB59C2F73A59C00E37A91 = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -122,12 +245,20 @@
 			projectRoot = "";
 			targets = (
 				E2C6D05C2F650B65007C1915 /* Magnetic */,
+				E2FCB59C2F73A59C00E37A91 /* MagneticMac */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		E2C6D05B2F650B65007C1915 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E2FCB59B2F73A59C00E37A91 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -143,6 +274,35 @@
 			files = (
 				E25E9C152F66513300C850FC /* VideoRecorder.swift in Sources */,
 				E2BAD4322F6887C5002E08BC /* ImageCropView.swift in Sources */,
+				E2FCB5912F73A2FD00E37A91 /* CameraController.swift in Sources */,
+				E2FCB5842F7393DC00E37A91 /* AudioEngine.swift in Sources */,
+				E2FCB5852F7393DC00E37A91 /* ContentView.swift in Sources */,
+				E2FCB5872F7393DC00E37A91 /* MetaballSimulation.swift in Sources */,
+				E2FCB58F2F73A16C00E37A91 /* PlatformTypes.swift in Sources */,
+				E2FCB5892F7393DC00E37A91 /* OnboardingView.swift in Sources */,
+				E2FCB58A2F7393DC00E37A91 /* PresetManager.swift in Sources */,
+				E2FCB58B2F7393DC00E37A91 /* SettingsView.swift in Sources */,
+				E2FCB58C2F7393DC00E37A91 /* Shaders.metal in Sources */,
+				E2FCB5932F73A34700E37A91 /* MetaballRenderer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E2FCB5992F73A59C00E37A91 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E2FCB5AC2F73A72400E37A91 /* PlatformTypes.swift in Sources */,
+				E2FCB5AD2F73A72E00E37A91 /* PresetManager.swift in Sources */,
+				E2FCB5AE2F73A72E00E37A91 /* SettingsView.swift in Sources */,
+				E2FCB5AF2F73A72E00E37A91 /* OnboardingView.swift in Sources */,
+				E2FCB5B02F73A72E00E37A91 /* ContentView.swift in Sources */,
+				E2FCB5B12F73A72E00E37A91 /* Shaders.metal in Sources */,
+				E2FCB5B22F73A72E00E37A91 /* MetaballSimulation.swift in Sources */,
+				E2FCB5B32F73A72E00E37A91 /* CameraController.swift in Sources */,
+				E2FCB5B42F73A72E00E37A91 /* VideoRecorder.swift in Sources */,
+				E2FCB5B52F73A72E00E37A91 /* ImageCropView.swift in Sources */,
+				E2FCB5B62F73A72E00E37A91 /* AudioEngine.swift in Sources */,
+				E2FCB5B72F73A72E00E37A91 /* MetaballRenderer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +498,74 @@
 			};
 			name = Release;
 		};
+		E2FCB5A62F73A59D00E37A91 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4YRYH5BD9B;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MagneticMac/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cycle2012.MagneticMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E2FCB5A72F73A59D00E37A91 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4YRYH5BD9B;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MagneticMac/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cycle2012.MagneticMac;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -355,6 +583,15 @@
 			buildConfigurations = (
 				E2C6D0692F650B68007C1915 /* Debug */,
 				E2C6D06A2F650B68007C1915 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E2FCB5A52F73A59D00E37A91 /* Build configuration list for PBXNativeTarget "MagneticMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E2FCB5A62F73A59D00E37A91 /* Debug */,
+				E2FCB5A72F73A59D00E37A91 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

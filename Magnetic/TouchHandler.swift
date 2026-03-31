@@ -16,7 +16,7 @@ final class TouchHandler {
     }
     
     private var activeTouches: [UITouch: ActiveTouch] = [:]
-    private let longPressDuration: CFTimeInterval = 0.5
+    private let longPressDuration: CFTimeInterval = 0.8
     
     /// Returns normalized touch points (0..1) for the simulation
     func getTouchPoints(viewSize: CGSize) -> [TouchPoint] {
