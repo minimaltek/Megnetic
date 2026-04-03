@@ -12,15 +12,31 @@ enum PresetManager {
     
     /// All AppStorage keys that constitute a preset
     static let settingKeys: [String] = [
+        // Tap toggles & camera
         "tapOrbit", "tapColor", "tapBall", "camMode",
+        // Mode
         "basicMode",
+        // General
         "ballCount", "isMicEnabled", "materialMode", "colorHue", "colorBri",
         "envMapIndex", "envIntensity", "isBPMEnabled", "orbitPattern",
         "ballSize", "bgMode", "bgCustomHue", "bgCustomSat",
         "bgCustomBri", "envLocked", "autoHue", "autoBgHue", "spacing",
         "orbitRange", "gridMode", "fps", "manualBPM",
         "recEnabled", "consoleMode", "brightnessSync", "brightnessSyncMax",
-        "blendK"
+        "blendK",
+        // Mic gain
+        "gainMode", "manualGain",
+        // BOX mode
+        "boxNoiseType",
+        // Polygon / RAIN shape
+        "polygonSides", "polygonInset",
+        // RAIN / PLY sound
+        "plyScaleMode", "plyBlockInst", "plyWallInst",
+        "plyRootNote", "plyOctave", "plyBallCount",
+        // RAIN delay
+        "plyDelayEnabled", "plyDelaySync", "plyDelayFeedback", "plyDelayAmount",
+        // RAIN category
+        "plyCategory"
     ]
     
     /// UserDefaults key for slot N

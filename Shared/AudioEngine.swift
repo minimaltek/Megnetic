@@ -111,7 +111,7 @@ final class AudioEngine: ObservableObject {
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothA2DP, .allowBluetooth])
             try session.setActive(true)
         } catch {
             print("Audio session error: \(error)")

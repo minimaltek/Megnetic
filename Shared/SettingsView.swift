@@ -32,9 +32,9 @@ struct SettingsView: View {
     @Binding var isMicEnabled: Bool
     @Binding var isBPMEnabled: Bool
     @Binding var orbitPattern: Int
-    @Binding var basicMode: Int       // 0=METABALL, 1=LINE, 2=BOX, 3=PLY
-    @Binding var polygonSides: Double // PLY orbit: 3=triangle .. 8=octagon
-    @Binding var polygonInset: Double // PLY star: 0=polygon, 1=fully collapsed
+    @Binding var basicMode: Int       // 0=METABALL, 1=LINE, 2=BOX, 3=RAIN
+    @Binding var polygonSides: Double // RAIN orbit: 3=triangle .. 8=octagon
+    @Binding var polygonInset: Double // RAIN star: 0=polygon, 1=fully collapsed
     @Binding var ballSize: Double
     @Binding var materialMode: Int
     @Binding var colorHue: Double
@@ -71,25 +71,47 @@ struct SettingsView: View {
     @Binding var manualGain: Double
     @Binding var originalPhotoImages: [PlatformImage?]
     @Binding var boxNoiseType: Int
-    @Binding var plyScaleMode: Int      // 0=OFF, 1=PENTA, 2=MAJOR, 3=MINOR, 4=BLUES
+    @Binding var rainScaleMode: Int      // 0=OFF, 1=PENTA, 2=MAJOR, 3=MINOR, 4=BLUES
+    @Binding var rainBlockInst: Int     // 0=BASE, 1=PIANO, 2=VOICE, 3=WOOD
+    @Binding var rainWallInst: Int      // same options
+    @Binding var rainRootNote: Int      // 0=C, 1=C#, 2=D, ... 11=B
+    @Binding var rainOctave: Int        // -2 to +2 octave offset
+
+    @Binding var rainBallCount: Int    // 1-3 balls in RAIN mode
+    @Binding var rainDelayEnabled: Bool // delay on/off
+    @Binding var rainDelaySync: Int    // delay sync division index
+    @Binding var rainDelayFeedback: Double // 0~0.95
+    @Binding var rainDelayAmount: Double   // 0~1
+    @Binding var rainCategory: Int       // 0=Fall, 1=PinBall
     var onLoadPreset: (() -> Void)? = nil
     var onSavePreset: ((Int, @escaping (PlatformImage?) -> Void) -> Void)? = nil
+    var onCustomSoundSaved: ((Int) -> Void)? = nil   // slot 0-2 → reload REC buffer
+    var onRecorderOpen: (() -> Void)? = nil            // stop audio before recording
     
     // Display order for materials (maps UI index → materialMode value)
     private let materialDisplayOrder = [0, 1, 4, 3, 2]  // BLK, HG, GLS, CLR, WIRE
     private let materialNames = ["BLK", "HG", "GLS", "CLR", "WIRE"]
     private let materialIcons = ["circle.fill", "drop.fill", "cube.transparent.fill", "paintpalette.fill", "cube.transparent"]
     
-    private let basicModeNames = ["METABALL", "LINE", "BOX", "PLY"]
-    private let basicModeIcons = ["drop.fill", "line.3.horizontal", "square.grid.3x3.topleft.filled", "play.fill"]
-    private let orbitPatternNames = ["RND", "CRC", "SPH", "TOR", "SPI", "SAT", "DNA", "FIG8", "WAV", "PLY"]
+    private let basicModeNames = ["METABALL", "LINE", "BOX", "RAIN"]
+    private let basicModeIcons = ["drop.fill", "line.3.horizontal", "square.grid.3x3.topleft.filled", "cloud.rain"]
+    private let orbitPatternNames = ["RND", "CRC", "SPH", "TOR", "SPI", "SAT", "DNA", "FIG8", "WAV", "RAIN"]
     private let orbitPatternIcons = ["dice", "circle", "globe", "circle.circle", "hurricane", "atom", "lungs", "infinity", "water.waves", "hexagon"]
     
     private let boxNoiseNames = ["PERLIN", "VORONOI", "SIMPLEX", "FBM"]
     private let boxNoiseIcons = ["waveform", "circle.hexagongrid", "water.waves", "mountain.2"]
     
-    private let plyScaleNames = ["OFF", "PENTA", "MAJOR", "MINOR", "BLUES"]
-    private let plyScaleIcons = ["speaker.slash", "music.note", "music.note.list", "music.quarternote.3", "guitars"]
+    private let rainScaleNames = ["OFF", "PENTA", "MAJOR", "MINOR", "BLUES"]
+    private let rainScaleIcons = ["speaker.slash", "music.note", "music.note.list", "music.quarternote.3", "guitars"]
+    
+    private let rainInstNames = ["BASE", "PIANO", "VOICE", "WOOD", "REC1", "REC2", "REC3"]
+    private let rainInstIcons = ["waveform", "pianokeys", "circle.hexagongrid", "lines.measurement.horizontal", "record.circle", "record.circle", "record.circle"]
+    
+    // 12 chromatic note names for root note picker
+    private let chromaticNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    // Octave offset labels
+    private let octaveLabels = ["-2", "-1", "±0", "+1", "+2"]
+    private let octaveValues = [-2, -1, 0, 1, 2]
     
     private let doubleTapNames = ["ORBIT", "COLOR", "BALL"]
     private let doubleTapIcons = ["arrow.trianglehead.2.clockwise", "paintbrush.fill", "circle.grid.2x2.fill"]
@@ -111,6 +133,8 @@ struct SettingsView: View {
     @State private var slotOccupied: [Bool] = (0..<12).map { PresetManager.isSlotOccupied($0) }
     @State private var slotThumbnails: [PlatformImage?] = (0..<12).map { PresetManager.loadThumbnail(from: $0) }
     @State private var deleteSlotIndex: Int? = nil
+    @State private var showRecorder: Bool = false
+    @State private var recorderSlot: Int = 0
     
     private let tabNames = ["VISUAL", "MOTION", "AUDIO", "SLOT"]
     
@@ -173,6 +197,7 @@ struct SettingsView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
+                
             }
             .padding(.horizontal, 20)
             .padding(.top, 4)
@@ -201,12 +226,38 @@ struct SettingsView: View {
         )) {
             cropViewContent
         }
+        .fullScreenCover(isPresented: $showRecorder) {
+            SoundRecorderView(
+                slot: recorderSlot,
+                onSaved: {
+                    showRecorder = false
+                    rainBlockInst = 4 + recorderSlot
+                    onCustomSoundSaved?(recorderSlot)
+                },
+                onCancel: {
+                    showRecorder = false
+                }
+            )
+        }
         #else
         .sheet(isPresented: Binding(
             get: { imageForCropping != nil },
             set: { if !$0 { imageForCropping = nil } }
         )) {
             cropViewContent
+        }
+        .sheet(isPresented: $showRecorder) {
+            SoundRecorderView(
+                slot: recorderSlot,
+                onSaved: {
+                    showRecorder = false
+                    rainBlockInst = 4 + recorderSlot
+                    onCustomSoundSaved?(recorderSlot)
+                },
+                onCancel: {
+                    showRecorder = false
+                }
+            )
         }
         #endif
     }
@@ -320,7 +371,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Hide MATERIAL and ENVIRONMENT in PLY mode (2D game, no 3D rendering)
+                // Hide MATERIAL and ENVIRONMENT in RAIN mode (2D game, no 3D rendering)
                 if basicMode != 3 {
                 thinDivider()
                 
@@ -701,7 +752,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                // Hide double-tap toggles in PLY mode
+                // Hide double-tap toggles in RAIN mode
                 if basicMode != 3 {
                 thinDivider()
                 
@@ -780,7 +831,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                // PLY sides slider (only when PLY orbit selected)
+                // RAIN sides slider (only when RAIN orbit selected)
                 if orbitPattern == 9 && basicMode == 1 {
                     thinDivider()
                     
@@ -831,26 +882,30 @@ struct SettingsView: View {
                 if basicMode == 3 {
                     thinDivider()
                     
-                    sectionHeader("SCALE")
+                    // RAIN sub-category selector: PinBall / Fall
+                    sectionHeader("CATEGORY")
                     
-                    HStack(spacing: 6) {
-                        ForEach(0..<plyScaleNames.count, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        let categoryNames = ["FALL", "PINBALL"]
+                        let categoryIcons = ["arrow.down.circle.fill", "circle.fill"]
+                        
+                        ForEach(0..<categoryNames.count, id: \.self) { index in
                             Button {
-                                plyScaleMode = index
+                                rainCategory = index
                             } label: {
                                 VStack(spacing: 6) {
-                                    Image(systemName: plyScaleIcons[index])
+                                    Image(systemName: categoryIcons[index])
                                         .font(.system(size: 14))
                                         .frame(width: 44, height: 32)
                                         .background(
-                                            plyScaleMode == index ? Theme.accent : Theme.surface,
+                                            rainCategory == index ? Theme.accent : Theme.surface,
                                             in: Capsule()
                                         )
-                                        .foregroundStyle(plyScaleMode == index ? Theme.bg : Theme.dimmed)
+                                        .foregroundStyle(rainCategory == index ? Theme.bg : Theme.dimmed)
                                     
-                                    Text(plyScaleNames[index])
+                                    Text(categoryNames[index])
                                         .font(.system(size: 8, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(plyScaleMode == index ? Theme.text : Theme.dimmed)
+                                        .foregroundStyle(rainCategory == index ? Theme.text : Theme.dimmed)
                                         .tracking(0.5)
                                 }
                             }
@@ -858,30 +913,277 @@ struct SettingsView: View {
                             .frame(maxWidth: .infinity)
                         }
                     }
+                    
+                    thinDivider()
+                    
+                    sectionHeader("SCALE")
+                    
+                    HStack(spacing: 6) {
+                        // Skip index 0 (OFF) — always use a scale
+                        ForEach(1..<rainScaleNames.count, id: \.self) { index in
+                            Button {
+                                rainScaleMode = index
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Image(systemName: rainScaleIcons[index])
+                                        .font(.system(size: 14))
+                                        .frame(width: 44, height: 32)
+                                        .background(
+                                            rainScaleMode == index ? Theme.accent : Theme.surface,
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(rainScaleMode == index ? Theme.bg : Theme.dimmed)
+                                    
+                                    Text(rainScaleNames[index])
+                                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(rainScaleMode == index ? Theme.text : Theme.dimmed)
+                                        .tracking(0.5)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    
+                    thinDivider()
+                    
+                    // BLOCK HIT instrument selector + REC1/2/3
+                    sectionHeader("BLOCK HIT")
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            // Built-in instruments (0-3)
+                            ForEach(0..<4, id: \.self) { index in
+                                Button {
+                                    rainBlockInst = index
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: rainInstIcons[index])
+                                            .font(.system(size: 14))
+                                            .frame(width: 44, height: 32)
+                                            .background(
+                                                rainBlockInst == index ? Theme.accent : Theme.surface,
+                                                in: Capsule()
+                                            )
+                                            .foregroundStyle(rainBlockInst == index ? Theme.bg : Theme.dimmed)
+                                        
+                                        Text(rainInstNames[index])
+                                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(rainBlockInst == index ? Theme.text : Theme.dimmed)
+                                            .tracking(0.5)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            // REC slots (4-6 → slot 0-2)
+                            ForEach(0..<3, id: \.self) { slot in
+                                let instIndex = 4 + slot
+                                let hasRec = CustomSoundManager.hasRecording(slot: slot)
+                                let isSelected = rainBlockInst == instIndex
+                                let recRed = Color(red: 0.9, green: 0.15, blue: 0.15)
+                                VStack(spacing: 6) {
+                                    Image(systemName: hasRec ? "waveform.circle.fill" : "record.circle")
+                                        .font(.system(size: 14))
+                                        .frame(width: 44, height: 32)
+                                        .background(
+                                            isSelected ? (hasRec ? recRed : Theme.accent) : (hasRec ? recRed.opacity(0.25) : Theme.surface),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isSelected ? (hasRec ? .white : Theme.bg) : (hasRec ? recRed : Theme.dimmed))
+                                    
+                                    Text(rainInstNames[instIndex])
+                                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(isSelected ? Theme.text : (hasRec ? recRed : Theme.dimmed))
+                                        .tracking(0.5)
+                                }
+                                .onTapGesture {
+                                    if hasRec {
+                                        rainBlockInst = instIndex
+                                    } else {
+                                        recorderSlot = slot
+                                        onRecorderOpen?()
+                                        showRecorder = true
+                                    }
+                                }
+                                .onLongPressGesture {
+                                    recorderSlot = slot
+                                    onRecorderOpen?()
+                                    showRecorder = true
+                                }
+                            }
+                        }
+                    }
+                    
+                    thinDivider()
+                    
+                    // WALL HIT instrument selector (built-in only)
+                    sectionHeader("WALL HIT")
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(0..<4, id: \.self) { index in
+                                Button {
+                                    rainWallInst = index
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: rainInstIcons[index])
+                                            .font(.system(size: 14))
+                                            .frame(width: 44, height: 32)
+                                            .background(
+                                                rainWallInst == index ? Theme.accent : Theme.surface,
+                                                in: Capsule()
+                                            )
+                                            .foregroundStyle(rainWallInst == index ? Theme.bg : Theme.dimmed)
+                                        
+                                        Text(rainInstNames[index])
+                                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(rainWallInst == index ? Theme.text : Theme.dimmed)
+                                            .tracking(0.5)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    
+                    thinDivider()
+                    
+                    // ROOT note (12 chromatic) + OCTAVE offset — for Block Hit scale
+                    sectionHeader("ROOT")
+                    
+                    HStack(spacing: 4) {
+                        ForEach(0..<12, id: \.self) { index in
+                            Button {
+                                rainRootNote = index
+                            } label: {
+                                Text(chromaticNames[index])
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 30)
+                                    .background(
+                                        rainRootNote == index ? Theme.accent : Theme.surface,
+                                        in: RoundedRectangle(cornerRadius: 6)
+                                    )
+                                    .foregroundStyle(rainRootNote == index ? Theme.bg : Theme.dimmed)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    
+                    HStack(spacing: 4) {
+                        Text("OCT")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.label)
+                            .tracking(1)
+                        
+                        ForEach(0..<octaveValues.count, id: \.self) { index in
+                            Button {
+                                rainOctave = octaveValues[index]
+                            } label: {
+                                Text(octaveLabels[index])
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 28)
+                                    .background(
+                                        rainOctave == octaveValues[index] ? Theme.accent : Theme.surface,
+                                        in: RoundedRectangle(cornerRadius: 6)
+                                    )
+                                    .foregroundStyle(rainOctave == octaveValues[index] ? Theme.bg : Theme.dimmed)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    
+                    thinDivider()
+                    
+                    // DELAY effect on block sounds
+                    HStack {
+                        sectionHeader("DELAY")
+                        Spacer()
+                        Button {
+                            rainDelayEnabled.toggle()
+                        } label: {
+                            Text(rainDelayEnabled ? "ON" : "OFF")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    rainDelayEnabled ? Theme.accent : Theme.surface,
+                                    in: Capsule()
+                                )
+                                .foregroundStyle(rainDelayEnabled ? Theme.bg : Theme.dimmed)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    if rainDelayEnabled {
+                        HStack(spacing: 4) {
+                            ForEach(0..<MetaballRenderer.delaySyncNames.count, id: \.self) { index in
+                                Button {
+                                    rainDelaySync = index
+                                } label: {
+                                    Text(MetaballRenderer.delaySyncNames[index])
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            rainDelaySync == index ? Theme.accent : Theme.surface,
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(rainDelaySync == index ? Theme.bg : Theme.dimmed)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        
+                        parameterRow(label: "FEEDBACK", value: String(format: "%.0f%%", rainDelayFeedback * 100)) {
+                            Slider(value: $rainDelayFeedback, in: 0...0.95)
+                                .tint(Theme.accent)
+                        }
+                        
+                        parameterRow(label: "AMOUNT", value: String(format: "%.0f%%", rainDelayAmount * 100)) {
+                            Slider(value: $rainDelayAmount, in: 0...1)
+                                .tint(Theme.accent)
+                        }
+                    }
+                    
+                    thinDivider()
+                    
+                    // RAIN ball count (1-3)
+                    parameterRow(label: "BALLS", value: "\(rainBallCount)") {
+                        Slider(value: Binding(
+                            get: { Double(rainBallCount) },
+                            set: { rainBallCount = Int($0) }
+                        ), in: 1...4, step: 1)
+                            .tint(Theme.accent)
+                    }
                 }
                 
-                // Hide ball/voxel parameters in PLY mode (not applicable to 2D game)
+                // Hide ball/voxel parameters in RAIN mode (not applicable to 2D game)
                 if basicMode != 3 {
                 thinDivider()
                 
-                // Section labels adapt to basicMode
-                sectionHeader(["BALLS", "LINE", "VOXEL"][min(basicMode, 2)], bold: true)
-                VStack(spacing: 4) {
-                    parameterRow(label: basicMode == 2 ? "DENSITY" : basicMode == 1 ? "WALKERS" : "COUNT", value: "\(Int(ballCount))", highlighted: tapBall && !lockCount, locked: $lockCount) {
-                        Slider(value: $ballCount, in: 4...20, step: 1)
-                            .tint(Theme.accent)
-                    }
-                    parameterRow(label: basicMode == 2 ? "CUBE SIZE" : basicMode == 1 ? "THICKNESS" : "SIZE", value: String(format: "%.1fx", ballSize), highlighted: tapBall && !lockSize, locked: $lockSize) {
-                        Slider(value: $ballSize, in: 0.3...0.75)
-                            .tint(Theme.accent)
-                    }
-                    parameterRow(label: basicMode == 2 ? "SPREAD" : "SPACING", value: String(format: "%.1fx", spacing), highlighted: tapBall && !lockSpacing, locked: $lockSpacing) {
-                        Slider(value: $spacing, in: 0.5...2.0)
-                            .tint(Theme.accent)
-                    }
-                    parameterRow(label: basicMode == 2 ? "RADIUS" : "ORBIT SIZE", value: String(format: "%.1fx", orbitRange), highlighted: tapBall && !lockOrbit, locked: $lockOrbit) {
-                        Slider(value: $orbitRange, in: 0.3...2.0)
-                            .tint(Theme.accent)
+                // Section labels adapt to basicMode — LINE mode has no adjustable params
+                if basicMode != 1 {
+                    sectionHeader(basicMode == 2 ? "VOXEL" : "BALLS", bold: true)
+                    VStack(spacing: 4) {
+                        parameterRow(label: basicMode == 2 ? "DENSITY" : "COUNT", value: "\(Int(ballCount))", highlighted: tapBall && !lockCount, locked: $lockCount) {
+                            Slider(value: $ballCount, in: 4...20, step: 1)
+                                .tint(Theme.accent)
+                        }
+                        parameterRow(label: basicMode == 2 ? "CUBE SIZE" : "SIZE", value: String(format: "%.1fx", ballSize), highlighted: tapBall && !lockSize, locked: $lockSize) {
+                            Slider(value: $ballSize, in: 0.3...0.75)
+                                .tint(Theme.accent)
+                        }
+                        parameterRow(label: basicMode == 2 ? "SPREAD" : "SPACING", value: String(format: "%.1fx", spacing), highlighted: tapBall && !lockSpacing, locked: $lockSpacing) {
+                            Slider(value: $spacing, in: 0.5...2.0)
+                                .tint(Theme.accent)
+                        }
+                        parameterRow(label: basicMode == 2 ? "RADIUS" : "ORBIT SIZE", value: String(format: "%.1fx", orbitRange), highlighted: tapBall && !lockOrbit, locked: $lockOrbit) {
+                            Slider(value: $orbitRange, in: 0.3...2.0)
+                                .tint(Theme.accent)
+                        }
                     }
                 }
                 } // end if basicMode != 3 (ball parameters)
@@ -898,104 +1200,116 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("MICROPHONE")
                 
-                // Mic toggle
-                HStack {
-                    Spacer()
-                    
-                    Text("INPUT")
+                if basicMode == 3 {
+                    Text("Not available in RAIN mode")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Theme.label)
-                        .tracking(1)
-                    
-                    Button {
-                        isMicEnabled.toggle()
-                    } label: {
-                        Text(isMicEnabled ? "ON" : "OFF")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(isMicEnabled ? Theme.bg : Theme.dimmed)
-                            .tracking(1)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                isMicEnabled ? Theme.accent : Theme.surface,
-                                in: Capsule()
-                            )
-                    }
-                    .buttonStyle(.plain)
+                        .foregroundStyle(Theme.dimmed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                 }
                 
-                if isMicEnabled {
-                    thinDivider()
-                    
-                    // Gain mode: AUTO / MANUAL
+                // Mic toggle
+                Group {
                     HStack {
                         Spacer()
                         
-                        Text("GAIN")
+                        Text("INPUT")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(Theme.label)
                             .tracking(1)
                         
-                        HStack(spacing: 2) {
-                            ForEach(Array(["AUTO", "MANUAL"].enumerated()), id: \.offset) { index, name in
-                                Button {
-                                    gainMode = index
-                                } label: {
-                                    Text(name)
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(gainMode == index ? Theme.bg : Theme.dimmed)
-                                        .tracking(0.5)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 6)
-                                        .background(
-                                            gainMode == index ? Theme.accent : Theme.surface,
-                                            in: Capsule()
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    
-                    if gainMode == 1 {
-                        parameterRow(label: "GAIN", value: String(format: "%.1f", manualGain)) {
-                            Slider(value: $manualGain, in: 0.5...5.0, step: 0.1)
-                                .tint(Theme.accent)
-                        }
-                    }
-                    
-                    thinDivider()
-                    
-                    // Brightness sync: boost env brightness based on mic input level
-                    HStack {
-                        sectionHeader("BRIGHTNESS SYNC")
-                        
-                        Spacer()
-                        
                         Button {
-                            brightnessSync.toggle()
+                            isMicEnabled.toggle()
                         } label: {
-                            Text(brightnessSync ? "ON" : "OFF")
+                            Text(isMicEnabled ? "ON" : "OFF")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(brightnessSync ? Theme.bg : Theme.dimmed)
+                                .foregroundStyle(isMicEnabled ? Theme.bg : Theme.dimmed)
                                 .tracking(1)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(
-                                    brightnessSync ? Theme.accent : Theme.surface,
+                                    isMicEnabled ? Theme.accent : Theme.surface,
                                     in: Capsule()
                                 )
                         }
                         .buttonStyle(.plain)
                     }
                     
-                    if brightnessSync {
-                        parameterRow(label: "MAX BOOST", value: String(format: "%.1f", brightnessSyncMax)) {
-                            Slider(value: $brightnessSyncMax, in: 1.5...5.0, step: 0.1)
-                                .tint(Theme.accent)
+                    if isMicEnabled {
+                        thinDivider()
+                        
+                        // Gain mode: AUTO / MANUAL
+                        HStack {
+                            Spacer()
+                            
+                            Text("GAIN")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Theme.label)
+                                .tracking(1)
+                            
+                            HStack(spacing: 2) {
+                                ForEach(Array(["AUTO", "MANUAL"].enumerated()), id: \.offset) { index, name in
+                                    Button {
+                                        gainMode = index
+                                    } label: {
+                                        Text(name)
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(gainMode == index ? Theme.bg : Theme.dimmed)
+                                            .tracking(0.5)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 6)
+                                            .background(
+                                                gainMode == index ? Theme.accent : Theme.surface,
+                                                in: Capsule()
+                                            )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        
+                        if gainMode == 1 {
+                            parameterRow(label: "GAIN", value: String(format: "%.1f", manualGain)) {
+                                Slider(value: $manualGain, in: 0.5...5.0, step: 0.1)
+                                    .tint(Theme.accent)
+                            }
+                        }
+                        
+                        thinDivider()
+                        
+                        // Brightness sync: boost env brightness based on mic input level
+                        HStack {
+                            sectionHeader("BRIGHTNESS SYNC")
+                            
+                            Spacer()
+                            
+                            Button {
+                                brightnessSync.toggle()
+                            } label: {
+                                Text(brightnessSync ? "ON" : "OFF")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(brightnessSync ? Theme.bg : Theme.dimmed)
+                                    .tracking(1)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        brightnessSync ? Theme.accent : Theme.surface,
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        if brightnessSync {
+                            parameterRow(label: "MAX BOOST", value: String(format: "%.1f", brightnessSyncMax)) {
+                                Slider(value: $brightnessSyncMax, in: 1.5...5.0, step: 0.1)
+                                    .tint(Theme.accent)
+                            }
                         }
                     }
                 }
+                .disabled(basicMode == 3)
+                .opacity(basicMode == 3 ? 0.3 : 1.0)
                 
                 thinDivider()
                 
@@ -1010,24 +1324,26 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.label)
                         .tracking(1)
                     
+                    let micAvailable = isMicEnabled && basicMode != 3
                     Button {
                         isBPMEnabled.toggle()
                     } label: {
                         Text("AUTO")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(isBPMEnabled ? Theme.bg : Theme.dimmed)
+                            .foregroundStyle(isBPMEnabled && micAvailable ? Theme.bg : Theme.dimmed)
                             .tracking(1)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(
-                                isBPMEnabled ? Theme.accent : Theme.surface,
+                                isBPMEnabled && micAvailable ? Theme.accent : Theme.surface,
                                 in: Capsule()
                             )
                     }
                     .buttonStyle(.plain)
+                    .disabled(!micAvailable)
                 }
                 
-                if !isBPMEnabled {
+                if !isBPMEnabled || !isMicEnabled || basicMode == 3 {
                     parameterRow(label: "MANUAL", value: "\(Int(manualBPM))") {
                         Slider(value: $manualBPM, in: 20...200, step: 1)
                             .tint(Theme.accent)
@@ -1159,6 +1475,9 @@ struct SettingsView: View {
             }
         }
     }
+    
+    // MARK: - Helpers
+    
     
     // MARK: - Reusable Components
     

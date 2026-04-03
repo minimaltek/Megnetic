@@ -7,6 +7,7 @@
 
 import Foundation
 import simd
+import QuartzCore
 
 // MARK: - Float clamping helper
 
@@ -142,18 +143,61 @@ struct BoxInstance {
     var color: SIMD4<Float>      // RGBA
 }
 
-// MARK: - PLY (Play) Game Structures
+// MARK: - RAIN (Play) Game Structures
 
-struct PlyBlock {
+struct RainBlock {
     var rect: SIMD4<Float>    // (x, y, width, height) in normalized 0..1 space
-    var semitones: Float = 0  // pitch shift in semitones (set at creation, used for sound)
+    var midiNote: UInt8 = 60  // MIDI note number (C4=60, set at creation, used for sound)
     var noteName: String = "" // display name (e.g. "A", "C#") — empty when scale is OFF
+    var hitScale: Float = 0   // 0..1, briefly 1.0 on hit then decays — drives visual pop
 }
 
-struct PlyParticle {
+struct RainParticle {
     var position: SIMD2<Float>
     var velocity: SIMD2<Float>
     var life: Float           // 1.0 → 0.0, removed when <= 0
+}
+
+struct RainBall {
+    var pos: SIMD2<Float>
+    var vel: SIMD2<Float>
+    var radius: Float
+    var bounceCount: Int = 0   // Floor bounce count (Fall mode only)
+    var insideBlock: Bool = false  // True when ball center is inside a block (debug)
+}
+
+enum DandelionStage: Int {
+    case sprout = 0       // 芽 — tiny curving stem + leaf tip
+    case doubleLeaves = 1 // 双葉 — two small leaves on short stem
+    case leavesSpread = 2 // 葉が広がる — larger leaves, taller stem
+    case bud = 3          // 蕾 — stem with closed bud on top
+    case bloom = 4        // 開花 — full radial petals
+    case wither = 5       // 枯れ — flower droops
+    case seedHead = 6     // 綿毛 — round puff ball
+    case dispersing = 7   // 種が飛ぶ — seeds flying with physics
+    case dead = 8         // 枯れ茎 — fading out
+    case dormant = 9      // 休眠 — invisible, waiting for hits to regrow
+}
+
+struct RainDandelionSeed {
+    var position: SIMD2<Float>
+    var velocity: SIMD2<Float>
+    var angle: Float        // rotation for visual "/" line
+    var life: Float         // 1.0 → 0.0
+    var driftSpeed: Float   // per-seed random drift speed for natural dispersal
+}
+
+struct RainDandelion {
+    var position: SIMD2<Float>       // anchor point on collision surface
+    var growDirection: SIMD2<Float>  // surface normal (growth direction)
+    var stage: DandelionStage = .sprout
+    var stageTime: Float = 0        // elapsed time in current stage
+    var totalAge: Float = 0
+    var seeds: [RainDandelionSeed] = []
+    var fadeAlpha: Float = 1.0
+    var swayPhase: Float = 0        // random sway offset
+    var swayAmount: Float = 0       // sway intensity (1.0 on hit, decays to 0)
+    var hitCount: Int = 0           // hits accumulated in current stage
 }
 
 // MARK: - Simulation
@@ -203,7 +247,7 @@ final class MetaballSimulation {
     private var orbitTracers: [OrbitTracer] = []
     /// GRID OFF: base drift direction (all tracers mirror this for crystal symmetry)
     private var gridOffBaseDrift: SIMD3<Float> = SIMD3<Float>(0, 0, 0)
-    /// Polygon sides for PLY orbit (3=triangle, 4=square, ..., 8=octagon)
+    /// Polygon sides for RAIN orbit (3=triangle, 4=square, ..., 8=octagon)
     var polygonSides: Int = 4
     /// Polygon inset factor: 0 = normal polygon, 1 = fully collapsed midpoints to center (star shape)
     var polygonInset: Float = 0.0
@@ -224,26 +268,38 @@ final class MetaballSimulation {
     // Per-cell hysteresis: tracks which cells are currently "on"
     private var boxCellAlpha: [Float] = []    // alpha per grid cell (0..1), indexed by flat grid index
     
-    // PLY (Play) game state
-    var plyBallPos: SIMD2<Float> = SIMD2<Float>(0.5, 0.5)
-    var plyBallVel: SIMD2<Float> = SIMD2<Float>(0.3, -0.4)
-    var plyBallRadius: Float = 0.012
-    var plyBlocks: [PlyBlock] = []
-    var plyParticles: [PlyParticle] = []
-    var plySpeedMultiplier: Float = 1.0
-    var plyPendingBlock: SIMD4<Float>? = nil
-    var plyPaused: Bool = false
-    var plyScreenAspect: Float = 1.0
+    // RAIN (Play) game state
+    var rainBalls: [RainBall] = []
+    var rainBallCount: Int = 1  // 1-4, set from UI
+    var rainBlocks: [RainBlock] = []
+    var rainParticles: [RainParticle] = []
+    var rainSpeedMultiplier: Float = 1.0
+    var rainPendingBlock: SIMD4<Float>? = nil
+    var rainPaused: Bool = false
+    
+    // Fall sub-category
+    var rainCategory: Int = 0              // 0=Fall, 1=PinBall
+    var rainFallPipePositions: [Float] = [] // X positions of pipes in normalized space
+    var rainFallLastBeatTime: Double = 0   // CACurrentMediaTime of bar start
+    var rainFallNextPipeIndex: Int = 0     // Which pipe spawns next within current bar
+    private var rainPrevCategory: Int = 0  // For detecting category changes
+    var rainScreenAspect: Float = 1.0
     /// Arena insets in normalized 0..1 space (set by renderer from safe area + UI margins)
-    var plyArenaTop: Float = 0.08
-    var plyArenaBottom: Float = 0.12
-    var plyArenaLeft: Float = 0.03
-    var plyArenaRight: Float = 0.03
+    var rainArenaTop: Float = 0.08
+    var rainArenaBottom: Float = 0.12
+    var rainArenaLeft: Float = 0.03
+    var rainArenaRight: Float = 0.03
     /// Collision events consumed by renderer for sound playback (cleared each frame)
-    var plyWallHit: Bool = false
-    var plyBlockHit: Bool = false
-    /// Semitones of the block that was hit (pre-computed at block creation)
-    var plyBlockHitSemitones: Float = 0
+    var rainWallHit: Bool = false
+    var rainBlockHit: Bool = false
+    /// Wall/floor hit animation scale (1.0 = just hit, decays to 0)
+    var rainWallHitScale: Float = 0
+    /// MIDI note of the block that was hit (pre-computed at block creation)
+    var rainBlockHitMidiNote: UInt8 = 60
+    
+    // Dandelion lifecycle
+    var rainDandelions: [RainDandelion] = []
+    private let maxDandelions = 20
     
     // Ball size multiplier (user-adjustable, 0.3..3.0, default 1.0)
     var ballSizeMultiplier: Float = 1.0
@@ -370,15 +426,33 @@ final class MetaballSimulation {
             return
         }
         
-        // PLY mode: bouncing ball game
+        // RAIN mode: bouncing ball game
         if orbitPattern == .polygon {
-            plyBallPos = SIMD2<Float>(0.5, 0.5)
-            let angle = Float.random(in: 0...(2.0 * Float.pi))
-            plyBallVel = SIMD2<Float>(cos(angle), sin(angle))
-            plyBlocks = []
-            plyParticles = []
-            plyPendingBlock = nil
-            plyPaused = false
+            if rainCategory == 0 {
+                // Fall mode: start with no balls — they spawn from pipes on beat
+                rainBalls = []
+                rainFallLastBeatTime = CACurrentMediaTime()  // start timing from now
+                rainFallNextPipeIndex = 0
+                updateFallPipePositions()
+            } else {
+                // PinBall mode (existing behavior)
+                rainBalls = []
+                for i in 0..<max(1, rainBallCount) {
+                    let angle = Float.random(in: 0...(2.0 * Float.pi))
+                    let offset = Float(i) * 0.1
+                    rainBalls.append(RainBall(
+                        pos: SIMD2(0.5 + offset - Float(max(1, rainBallCount) - 1) * 0.05, 0.5),
+                        vel: SIMD2(cos(angle), sin(angle)),
+                        radius: 0.012
+                    ))
+                }
+            }
+            rainPrevCategory = rainCategory
+            rainBlocks = []
+            rainParticles = []
+            rainDandelions = []
+            rainPendingBlock = nil
+            rainPaused = false
             
             balls = [Ball(position: SIMD3(0.5, 0.5, 0.5), radius: 0.001)]
             velocities = [.zero]
@@ -908,27 +982,429 @@ final class MetaballSimulation {
         v.isFinite ? v : fallback
     }
     
-    // MARK: - PLY Helpers
+    // MARK: - RAIN Helpers
     
-    private func spawnPlyParticles(at position: SIMD2<Float>, normal: SIMD2<Float>, count: Int = 8) {
+    private func spawnRainParticles(at position: SIMD2<Float>, normal: SIMD2<Float>, count: Int = 6) {
         for _ in 0..<count {
-            let spread = Float.random(in: -0.8...0.8)
-            let speed = Float.random(in: 0.1...0.4)
+            let spread = Float.random(in: -0.3...0.3)
+            let speed = Float.random(in: 0.15...0.35)
             let perpX = -normal.y
             let perpY = normal.x
             let dir = SIMD2<Float>(
                 normal.x * speed + perpX * spread * speed,
                 normal.y * speed + perpY * spread * speed
             )
-            let particle = PlyParticle(
+            let particle = RainParticle(
                 position: position,
                 velocity: dir,
                 life: 1.0
             )
-            plyParticles.append(particle)
+            rainParticles.append(particle)
         }
-        if plyParticles.count > 500 {
-            plyParticles.removeFirst(plyParticles.count - 500)
+        if rainParticles.count > 800 {
+            rainParticles.removeFirst(rainParticles.count - 800)
+        }
+    }
+    
+    // MARK: - Dandelion Lifecycle
+    
+    private let dandelionProximity: Float = 0.03
+    
+    func handleDandelionHit(at position: SIMD2<Float>, normal: SIMD2<Float>) {
+        // Find nearby existing dandelion that can still grow or is dormant
+        var closestIndex: Int? = nil
+        var closestDist: Float = dandelionProximity
+        
+        for i in 0..<rainDandelions.count {
+            let stage = rainDandelions[i].stage
+            // Allow hits on growing stages and dormant stage
+            guard stage.rawValue < DandelionStage.dispersing.rawValue || stage == .dormant else { continue }
+            let dist = simd_length(rainDandelions[i].position - position)
+            if dist < closestDist {
+                closestDist = dist
+                closestIndex = i
+            }
+        }
+        
+        if let idx = closestIndex {
+            if rainDandelions[idx].stage == .dormant {
+                // Dormant: count hits, regrow after 5
+                rainDandelions[idx].hitCount += 1
+                if rainDandelions[idx].hitCount >= 5 {
+                    rainDandelions[idx].stage = .sprout
+                    rainDandelions[idx].stageTime = 0
+                    rainDandelions[idx].hitCount = 0
+                    rainDandelions[idx].fadeAlpha = 1.0
+                    rainDandelions[idx].totalAge = 0
+                }
+            } else {
+                rainDandelions[idx].hitCount += 1
+                // ヒットで揺れを発生（全ステージ）
+                rainDandelions[idx].swayAmount = 1.0
+                let hitsNeeded = hitsForStage(rainDandelions[idx].stage)
+                if rainDandelions[idx].hitCount >= hitsNeeded {
+                    rainDandelions[idx].hitCount = 0
+                    advanceDandelion(at: idx)
+                }
+            }
+        } else {
+            spawnDandelion(at: position, normal: normal)
+        }
+    }
+    
+    private func advanceDandelion(at index: Int) {
+        let current = rainDandelions[index].stage
+        guard current.rawValue < DandelionStage.dispersing.rawValue,
+              let next = DandelionStage(rawValue: current.rawValue + 1) else { return }
+        rainDandelions[index].stage = next
+        rainDandelions[index].stageTime = 0
+        if next == .dispersing {
+            spawnDandelionSeeds(for: &rainDandelions[index])
+        }
+    }
+    
+    private func hitsForStage(_ stage: DandelionStage) -> Int {
+        switch stage {
+        case .sprout:       return 5   // 芽 → 双葉
+        case .doubleLeaves: return 5   // 双葉 → 葉が広がる
+        case .leavesSpread: return 5   // 葉 → 蕾
+        case .bud:          return 4   // 蕾 → 開花
+        case .bloom:        return 4   // 開花 → 枯れ（花を楽しむ）
+        case .wither:       return 2   // 枯れ → 綿毛
+        case .seedHead:     return 2   // 綿毛 → 種が飛ぶ
+        default:            return 1
+        }
+    }
+    
+    private func spawnDandelion(at position: SIMD2<Float>, normal: SIMD2<Float>) {
+        let d = RainDandelion(
+            position: position,
+            growDirection: normal,
+            stage: .sprout,
+            stageTime: 0,
+            totalAge: 0,
+            seeds: [],
+            fadeAlpha: 1.0,
+            swayPhase: Float.random(in: 0...(2 * .pi))
+        )
+        rainDandelions.append(d)
+        if rainDandelions.count > maxDandelions {
+            if let deadIdx = rainDandelions.firstIndex(where: { $0.stage == .dead }) {
+                rainDandelions.remove(at: deadIdx)
+            } else {
+                rainDandelions.removeFirst()
+            }
+        }
+    }
+    
+    private func spawnDandelionSeeds(for dandelion: inout RainDandelion) {
+        let stemH = dandelionStemHeight(for: dandelion.stage)
+        let dir = dandelion.growDirection
+        let acDir = SIMD2<Float>(dir.x * stemH, dir.y * stemH * rainScreenAspect)
+        let headCenter = dandelion.position + acDir
+        let seedCount = 180
+        let ballR: Float = 0.006  // グロー球の内側に密集（小さい円）
+        for j in 0..<seedCount {
+            // 円の内部にランダム分布（中心に密集）
+            let baseAngle = Float(j) / Float(seedCount) * 2.0 * .pi + Float.random(in: -0.3...0.3)
+            let rFrac = sqrt(Float.random(in: 0...1))  // sqrt で均一面積分布
+            let r = ballR * rFrac
+            let startPos = headCenter + SIMD2<Float>(cos(baseAngle) * r, sin(baseAngle) * r)
+            // 各種子に固有の飛散方向（大きくバラつかせる）
+            let flyAngle = Float.random(in: 0...(2.0 * .pi))
+            let drift = Float.random(in: 0.005...0.06)  // 速い子と遅い子の差を大きく
+            let seed = RainDandelionSeed(
+                position: startPos,
+                velocity: SIMD2<Float>(0, 0),
+                angle: flyAngle,
+                life: Float.random(in: 0.7...1.0),  // 寿命もバラす
+                driftSpeed: drift
+            )
+            dandelion.seeds.append(seed)
+        }
+    }
+    
+    private func dandelionStemHeight(for stage: DandelionStage) -> Float {
+        switch stage {
+        case .sprout:       return 0.008
+        case .doubleLeaves: return 0.016
+        case .leavesSpread: return 0.028
+        case .bud:          return 0.036
+        case .bloom:        return 0.040
+        case .wither:       return 0.040
+        case .seedHead:     return 0.040
+        case .dispersing:   return 0.040
+        case .dead:         return 0.030
+        case .dormant:      return 0.0
+        }
+    }
+    
+    private func updateDandelions(dt: Float) {
+        for i in (0..<rainDandelions.count).reversed() {
+            rainDandelions[i].stageTime += dt
+            rainDandelions[i].totalAge += dt
+            // 揺れの減衰（ゆっくり収まる）
+            if rainDandelions[i].swayAmount > 0 {
+                rainDandelions[i].swayAmount *= (1.0 - dt * 1.2)
+                if rainDandelions[i].swayAmount < 0.01 { rainDandelions[i].swayAmount = 0 }
+            }
+            
+            switch rainDandelions[i].stage {
+            case .sprout, .doubleLeaves, .leavesSpread, .bud, .bloom, .wither:
+                break  // advance only via collision hits
+                
+            case .seedHead:
+                // Auto-transition to dispersing after 2 seconds without hits
+                if rainDandelions[i].stageTime > 2.0 {
+                    rainDandelions[i].stage = .dispersing
+                    rainDandelions[i].stageTime = 0
+                    spawnDandelionSeeds(for: &rainDandelions[i])
+                }
+                
+            case .dispersing:
+                var allGone = true
+                let stageT = rainDandelions[i].stageTime
+                // 最初0.3秒は円形を維持、その後各種子が自分のペースで散る
+                let rampT = min(stageT / 0.3, 1.0)  // 0→1 over 0.3s
+                // 白丸＆茎をフェードアウト（2倍速）
+                let disperseFade: Float = max(1.0 - stageT / 10.0, 0.0)
+                rainDandelions[i].fadeAlpha = disperseFade
+                let dDir = rainDandelions[i].growDirection
+                let dStemH = dandelionStemHeight(for: .seedHead)
+                let headCenter = rainDandelions[i].position + SIMD2<Float>(dDir.x * dStemH, dDir.y * dStemH * rainScreenAspect)
+                for si in (0..<rainDandelions[i].seeds.count).reversed() {
+                    let seedRef = rainDandelions[i].seeds[si]
+                    // 各種子固有の飛散方向 — 上方向に偏らせる（Y負=上）
+                    let rawDir = SIMD2<Float>(cos(seedRef.angle), sin(seedRef.angle))
+                    let biasedDir = SIMD2<Float>(rawDir.x, min(rawDir.y, rawDir.y * 0.3 - 0.3))
+                    let dLen = sqrt(biasedDir.x * biasedDir.x + biasedDir.y * biasedDir.y)
+                    let driftDir = dLen > 0.001 ? biasedDir / dLen : SIMD2<Float>(0, -1)
+                    // 速度1/2
+                    let driftForce = driftDir * seedRef.driftSpeed * 0.5 * rampT
+                    // 上昇気流（弱め）
+                    let updraft = SIMD2<Float>(0.005, -0.01) * rampT
+                    // スパイラル turbulence（中心からの距離と角度で渦を巻く）
+                    let fromC = seedRef.position - headCenter
+                    let distC = sqrt(fromC.x * fromC.x + fromC.y * fromC.y)
+                    let spiralPhase = stageT * 2.0 + seedRef.angle * 3.0 + distC * 80.0
+                    // 渦: 進行方向の垂直成分（螺旋運動）
+                    let perpX = -driftDir.y
+                    let perpY = driftDir.x
+                    let spiralStrength: Float = 0.015 * rampT * min(distC * 20.0, 1.0)
+                    let spiral = SIMD2<Float>(
+                        perpX * sin(spiralPhase) * spiralStrength,
+                        perpY * sin(spiralPhase) * spiralStrength
+                    )
+                    // ふわふわ揺れ（種子ごとに位相が違う）
+                    let wobble = SIMD2<Float>(
+                        sin(stageT * 2.0 + seedRef.angle * 5.0) * 0.006,
+                        cos(stageT * 1.5 + seedRef.angle * 7.0) * 0.004
+                    ) * rampT
+                    rainDandelions[i].seeds[si].velocity += (driftForce + updraft + spiral + wobble) * dt
+                    rainDandelions[i].seeds[si].velocity *= (1.0 - dt * 0.6)  // 強めの空気抵抗（ゆっくり漂う）
+                    rainDandelions[i].seeds[si].position += rainDandelions[i].seeds[si].velocity * dt
+                    rainDandelions[i].seeds[si].angle += dt * 0.2  // さらにゆっくり回転
+                    rainDandelions[i].seeds[si].life -= dt * 0.005  // 寿命長め（~200秒）
+                    if rainDandelions[i].seeds[si].life <= 0 {
+                        rainDandelions[i].seeds.remove(at: si)
+                    } else {
+                        allGone = false
+                    }
+                }
+                if allGone || rainDandelions[i].stageTime > 210.0 {
+                    rainDandelions[i].stage = .dead
+                    rainDandelions[i].stageTime = 0
+                    rainDandelions[i].seeds = []
+                }
+                
+            case .dead:
+                // dispersingの残りalphaからさらにフェード (2秒で完全に消える)
+                let deadStart = rainDandelions[i].fadeAlpha
+                let deadFade = max(0, deadStart - dt / 2.0)
+                rainDandelions[i].fadeAlpha = deadFade
+                if rainDandelions[i].fadeAlpha <= 0 {
+                    // 消えたら休眠状態に — 同じ位置で5回ヒットで再生
+                    rainDandelions[i].stage = .dormant
+                    rainDandelions[i].stageTime = 0
+                    rainDandelions[i].hitCount = 0
+                    rainDandelions[i].fadeAlpha = 0
+                }
+                
+            case .dormant:
+                // 何も描画しない。ヒットカウントは handleDandelionHit で管理
+                // 長時間放置で削除（メモリ節約）
+                if rainDandelions[i].stageTime > 120.0 {
+                    rainDandelions.remove(at: i)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Fall Mode Helpers
+    
+    /// Fixed pipe position at top-left of arena
+    func updateFallPipePositions() {
+        let pipeX = rainArenaLeft + 0.07
+        rainFallPipePositions = [pipeX]
+    }
+    
+    /// Fall mode physics: gravity, open right/top walls, BPM-synced spawn from pipes
+    private func updateFallMode(dt: Float) {
+        // BPM-driven parameters (BPM20=最低速、BPM200=旧BPM100相当)
+        let bpmClamped = max(min(detectedBPM, 200), 20)
+        let bpmT = (bpmClamped - 20) / (200 - 20)  // 0~1
+        let gravity: Float = 0.15 + bpmT * 0.79
+        // 反発率: BPM高いほど弾む (0.8 → 0.95)
+        let energyLoss: Float = 0.8 + bpmT * 0.15
+        let rightwardVel: Float = 0.05 + bpmT * 0.05
+        
+        // Arena bounds
+        let maxY = 1.0 - rainArenaBottom  // Floor
+        
+        // Beat-synced spawning: all balls from same pipe with rhythmic timing
+        // 1 ball = 1 per bar, 2 = eighth notes (♪♪), 3 = triplets, 4 = sixteenths
+        let beatDuration = Double(60.0 / max(bpmClamped, 20))
+        let barDuration = beatDuration * 4.0
+        let now = CACurrentMediaTime()
+        let count = max(1, rainBallCount)
+        
+        if rainFallLastBeatTime == 0 {
+            rainFallLastBeatTime = now
+            updateFallPipePositions()
+            rainFallNextPipeIndex = 0
+        }
+        
+        // If time has jumped far ahead (sleep/background), fast-forward
+        let maxLag = barDuration * 1.5
+        if now - rainFallLastBeatTime > maxLag {
+            rainFallLastBeatTime = now
+            rainFallNextPipeIndex = 0
+            updateFallPipePositions()
+        }
+        
+        // Spawn interval within a beat group:
+        // 1 ball: full bar, 2: eighth (half-beat), 3: triplet (1/3 beat), 4: sixteenth (quarter-beat)
+        let groupInterval = beatDuration / Double(count)
+        let nextSpawnTime = rainFallLastBeatTime + groupInterval * Double(rainFallNextPipeIndex)
+        
+        if now >= nextSpawnTime {
+            let pipeX = rainFallPipePositions.first ?? 0.3
+            let pipeBottomY = rainArenaTop + 0.065
+            rainBalls.append(RainBall(
+                pos: SIMD2(pipeX, pipeBottomY),
+                vel: SIMD2(rightwardVel, 0),
+                radius: 0.012,
+                bounceCount: 0
+            ))
+            rainFallNextPipeIndex += 1
+            
+            // All balls in this group spawned — wait for next bar, pick new pipe position
+            if rainFallNextPipeIndex >= count {
+                rainFallNextPipeIndex = 0
+                rainFallLastBeatTime += barDuration
+                updateFallPipePositions()
+            }
+        }
+        
+        // Physics for each ball (reversed for safe removal)
+        for bi in (0..<rainBalls.count).reversed() {
+            let r = rainBalls[bi].radius
+            
+            // Reset inside-block flag each frame
+            rainBalls[bi].insideBlock = false
+            
+            // Apply gravity (positive Y = downward in this coord system)
+            rainBalls[bi].vel.y += gravity * dt
+            
+            // Move ball
+            rainBalls[bi].pos += rainBalls[bi].vel * dt
+            
+            // Minimum impact speed to trigger sound/particles (skip weak bounces)
+            let minImpactSpeed: Float = 0.06
+            
+            // NO left wall — balls exit freely to the left
+            
+            // FLOOR (bottom wall) collision
+            if rainBalls[bi].pos.y + r > maxY {
+                let impactSpeed = abs(rainBalls[bi].vel.y)
+                rainBalls[bi].pos.y = maxY - r
+                rainBalls[bi].vel.y = -abs(rainBalls[bi].vel.y) * energyLoss
+                rainBalls[bi].bounceCount += 1
+                if impactSpeed > minImpactSpeed {
+                    spawnRainParticles(at: SIMD2<Float>(rainBalls[bi].pos.x, maxY), normal: SIMD2<Float>(0, -1))
+                    // Floor — no dandelion (Fall mode: only block top surface)
+                    rainWallHit = true
+                    rainWallHitScale = 1.0
+                }
+            }
+            
+            // Remove ball if it's resting on the floor with negligible velocity
+            let speed = sqrt(rainBalls[bi].vel.x * rainBalls[bi].vel.x + rainBalls[bi].vel.y * rainBalls[bi].vel.y)
+            if speed < 0.01 && rainBalls[bi].pos.y + r >= maxY - 0.002 {
+                rainBalls.remove(at: bi)
+                continue
+            }
+            
+            // NO right wall, NO top wall — balls exit freely
+            
+            // Block collisions (AABB vs circle — same as PinBall)
+            for i in 0..<rainBlocks.count {
+                let block = rainBlocks[i]
+                let bx = block.rect.x
+                let by = block.rect.y
+                let bw = block.rect.z
+                let bh = block.rect.w
+                
+                let closestX = max(bx, min(rainBalls[bi].pos.x, bx + bw))
+                let closestY = max(by, min(rainBalls[bi].pos.y, by + bh))
+                let dx = rainBalls[bi].pos.x - closestX
+                let dy = rainBalls[bi].pos.y - closestY
+                let distSq = dx * dx + dy * dy
+                
+                if distSq < r * r {
+                    let dist = sqrt(distSq)
+                    if dist > 0.0001 {
+                        let nx = dx / dist
+                        let ny = dy / dist
+                        let dot = rainBalls[bi].vel.x * nx + rainBalls[bi].vel.y * ny
+                        // Standard elastic reflection
+                        rainBalls[bi].vel.x -= 2.0 * dot * nx
+                        rainBalls[bi].vel.y -= 2.0 * dot * ny
+                        // Clamp max speed to prevent excessively large bounces
+                        let spd = sqrt(rainBalls[bi].vel.x * rainBalls[bi].vel.x + rainBalls[bi].vel.y * rainBalls[bi].vel.y)
+                        let maxSpd: Float = 0.6
+                        if spd > maxSpd {
+                            rainBalls[bi].vel.x *= maxSpd / spd
+                            rainBalls[bi].vel.y *= maxSpd / spd
+                        }
+                        rainBalls[bi].pos.x = closestX + nx * (r + 0.002)
+                        rainBalls[bi].pos.y = closestY + ny * (r + 0.002)
+                        spawnRainParticles(at: SIMD2<Float>(closestX, closestY), normal: SIMD2<Float>(nx, ny))
+                        // Fall mode: only spawn dandelion on block top surface (ny < -0.5)
+                        if ny < -0.5 {
+                            handleDandelionHit(at: SIMD2<Float>(closestX, closestY), normal: SIMD2<Float>(0, -1))
+                        }
+                        rainBlocks[i].hitScale = 1.0
+                        rainBlockHit = true
+                        rainBlockHitMidiNote = block.midiNote
+                    } else {
+                        // Ball center is inside block — use block top surface as hit point
+                        rainBalls[bi].insideBlock = true
+                        rainBalls[bi].vel.y = -rainBalls[bi].vel.y * energyLoss
+                        rainBalls[bi].pos.y += (rainBalls[bi].vel.y > 0 ? 1 : -1) * (r + 0.002)
+                        let hitY = by  // block top surface
+                        handleDandelionHit(at: SIMD2<Float>(rainBalls[bi].pos.x, hitY), normal: SIMD2<Float>(0, -1))
+                        rainBlocks[i].hitScale = 1.0
+                        rainBlockHit = true
+                        rainBlockHitMidiNote = block.midiNote
+                    }
+                }
+            }
+            
+            // Remove ball if it exits screen (left, right, or above top)
+            if rainBalls[bi].pos.x < -0.05 || rainBalls[bi].pos.x > 1.05 || rainBalls[bi].pos.y < -0.05 {
+                rainBalls.remove(at: bi)
+            }
         }
     }
     
@@ -1409,7 +1885,7 @@ final class MetaballSimulation {
         case 6: return 2   // DNA: 2 strands
         case 7: return 2   // FIG8: lemniscate, 2 tracers going opposite ways
         case 8: return 2   // WAV: dual wave, 2 tracers
-        case 9: return 1   // PLY: single polygon tracer
+        case 9: return 1   // RAIN: single polygon tracer
         default: return 1
         }
     }
@@ -1935,119 +2411,193 @@ final class MetaballSimulation {
             return
         }
         
-        // PLY mode: 2D bouncing ball physics
+        // RAIN mode: 2D bouncing ball physics
         if orbitPattern == .polygon {
             // Clear collision flags (consumed by renderer each frame)
-            plyWallHit = false
-            plyBlockHit = false
+            rainWallHit = false
+            rainBlockHit = false
+            
+            // Reset on category change
+            if rainCategory != rainPrevCategory {
+                rainPrevCategory = rainCategory
+                rainBalls = []
+                rainParticles = []
+                rainDandelions = []
+                rainFallLastBeatTime = CACurrentMediaTime()
+                rainFallNextPipeIndex = 0
+                if rainCategory == 1 {
+                    // Re-init PinBall balls
+                    for i in 0..<max(1, rainBallCount) {
+                        let angle = Float.random(in: 0...(2.0 * Float.pi))
+                        let offset = Float(i) * 0.1
+                        rainBalls.append(RainBall(
+                            pos: SIMD2(0.5 + offset - Float(max(1, rainBallCount) - 1) * 0.05, 0.5),
+                            vel: SIMD2(cos(angle), sin(angle)),
+                            radius: 0.012
+                        ))
+                    }
+                } else {
+                    updateFallPipePositions()
+                }
+            }
             
             // Skip physics when paused (still allow block creation via swipe)
-            if plyPaused {
+            if rainPaused {
                 // Update particles even when paused (let them fade out)
-                for i in (0..<plyParticles.count).reversed() {
-                    plyParticles[i].life -= safeDt * 2.0
-                    if plyParticles[i].life <= 0 {
-                        plyParticles.remove(at: i)
+                for i in (0..<rainParticles.count).reversed() {
+                    rainParticles[i].life -= safeDt * 2.0
+                    if rainParticles[i].life <= 0 {
+                        rainParticles.remove(at: i)
                     }
                 }
+                // Keep dandelion animations running when paused (seeds float)
+                updateDandelions(dt: safeDt)
                 balls = [Ball(position: SIMD3(0.5, 0.5, 0.5), radius: 0.001)]
                 return
             }
             
-            // BPM-driven speed
-            let bpmClamped = max(min(detectedBPM, 200), 20)
-            let bpmT = (bpmClamped - 20) / (200 - 20)
-            let baseSpeed: Float = 0.15 + bpmT * 0.45
-            let speed = baseSpeed * plySpeedMultiplier
-            
-            // Normalize velocity direction and move
-            let velLen = simd_length(plyBallVel)
-            if velLen > 0.0001 {
-                let dir = plyBallVel / velLen
-                plyBallPos += dir * speed * safeDt
-            }
-            
-            // Arena bounds (from safe area insets)
-            let minX = plyArenaLeft
-            let maxX = 1.0 - plyArenaRight
-            let minY = plyArenaTop
-            let maxY = 1.0 - plyArenaBottom
-            let r = plyBallRadius
-            
-            // Wall collisions
-            if plyBallPos.x - r < minX {
-                plyBallPos.x = minX + r
-                plyBallVel.x = abs(plyBallVel.x)
-                spawnPlyParticles(at: SIMD2<Float>(minX, plyBallPos.y), normal: SIMD2<Float>(1, 0))
-                plyWallHit = true
-            }
-            if plyBallPos.x + r > maxX {
-                plyBallPos.x = maxX - r
-                plyBallVel.x = -abs(plyBallVel.x)
-                spawnPlyParticles(at: SIMD2<Float>(maxX, plyBallPos.y), normal: SIMD2<Float>(-1, 0))
-                plyWallHit = true
-            }
-            if plyBallPos.y - r < minY {
-                plyBallPos.y = minY + r
-                plyBallVel.y = abs(plyBallVel.y)
-                spawnPlyParticles(at: SIMD2<Float>(plyBallPos.x, minY), normal: SIMD2<Float>(0, 1))
-                plyWallHit = true
-            }
-            if plyBallPos.y + r > maxY {
-                plyBallPos.y = maxY - r
-                plyBallVel.y = -abs(plyBallVel.y)
-                spawnPlyParticles(at: SIMD2<Float>(plyBallPos.x, maxY), normal: SIMD2<Float>(0, -1))
-                plyWallHit = true
-            }
-            
-            // Block collisions (AABB vs circle)
-            for i in 0..<plyBlocks.count {
-                let block = plyBlocks[i]
-                let bx = block.rect.x
-                let by = block.rect.y
-                let bw = block.rect.z
-                let bh = block.rect.w
+            if rainCategory == 0 {
+                // ===== FALL MODE =====
+                updateFallMode(dt: safeDt)
+            } else {
+                // ===== PINBALL MODE (existing) =====
                 
-                // Closest point on block rect to ball center
-                let closestX = max(bx, min(plyBallPos.x, bx + bw))
-                let closestY = max(by, min(plyBallPos.y, by + bh))
-                let dx = plyBallPos.x - closestX
-                let dy = plyBallPos.y - closestY
-                let distSq = dx * dx + dy * dy
+                // Ensure ball count matches setting
+                while rainBalls.count < max(1, rainBallCount) {
+                    let angle = Float.random(in: 0...(2.0 * Float.pi))
+                    rainBalls.append(RainBall(pos: SIMD2(0.5, 0.5), vel: SIMD2(cos(angle), sin(angle)), radius: 0.012))
+                }
+                while rainBalls.count > max(1, rainBallCount) {
+                    rainBalls.removeLast()
+                }
                 
-                if distSq < r * r {
-                    let dist = sqrt(distSq)
-                    if dist > 0.0001 {
-                        let nx = dx / dist
-                        let ny = dy / dist
-                        // Reflect velocity
-                        let dot = plyBallVel.x * nx + plyBallVel.y * ny
-                        plyBallVel.x -= 2.0 * dot * nx
-                        plyBallVel.y -= 2.0 * dot * ny
-                        // Push ball out
-                        plyBallPos.x = closestX + nx * (r + 0.002)
-                        plyBallPos.y = closestY + ny * (r + 0.002)
-                        spawnPlyParticles(at: SIMD2<Float>(closestX, closestY), normal: SIMD2<Float>(nx, ny))
-                        plyBlockHit = true
-                        plyBlockHitSemitones = block.semitones
-                    } else {
-                        // Ball center inside block — push out vertically
-                        plyBallVel.y = -plyBallVel.y
-                        plyBallPos.y += (plyBallVel.y > 0 ? 1 : -1) * (r + 0.002)
-                        plyBlockHit = true
-                        plyBlockHitSemitones = block.semitones
+                // BPM-driven speed (BPM20=最低速、BPM200=旧BPM100相当)
+                let bpmClamped = max(min(detectedBPM, 200), 20)
+                let bpmT = (bpmClamped - 20) / (200 - 20)
+                let speed: Float = 0.075 + bpmT * 0.53
+                
+                // Arena bounds (from safe area insets)
+                let minX = rainArenaLeft
+                let maxX = 1.0 - rainArenaRight
+                let minY = rainArenaTop
+                let maxY = 1.0 - rainArenaBottom
+                
+                // Physics for each ball
+                for bi in 0..<rainBalls.count {
+                    let r = rainBalls[bi].radius
+                    rainBalls[bi].insideBlock = false
+                    
+                    // Normalize velocity direction and move
+                    let velLen = simd_length(rainBalls[bi].vel)
+                    if velLen > 0.0001 {
+                        let dir = rainBalls[bi].vel / velLen
+                        rainBalls[bi].pos += dir * speed * safeDt
+                    }
+                    
+                    // Wall collisions
+                    if rainBalls[bi].pos.x - r < minX {
+                        rainBalls[bi].pos.x = minX + r
+                        rainBalls[bi].vel.x = abs(rainBalls[bi].vel.x)
+                        spawnRainParticles(at: SIMD2<Float>(minX, rainBalls[bi].pos.y), normal: SIMD2<Float>(1, 0))
+                        handleDandelionHit(at: SIMD2<Float>(minX, rainBalls[bi].pos.y), normal: SIMD2<Float>(1, 0))
+                        rainWallHit = true
+                        rainWallHitScale = 1.0
+                    }
+                    if rainBalls[bi].pos.x + r > maxX {
+                        rainBalls[bi].pos.x = maxX - r
+                        rainBalls[bi].vel.x = -abs(rainBalls[bi].vel.x)
+                        spawnRainParticles(at: SIMD2<Float>(maxX, rainBalls[bi].pos.y), normal: SIMD2<Float>(-1, 0))
+                        handleDandelionHit(at: SIMD2<Float>(maxX, rainBalls[bi].pos.y), normal: SIMD2<Float>(-1, 0))
+                        rainWallHit = true
+                        rainWallHitScale = 1.0
+                    }
+                    if rainBalls[bi].pos.y - r < minY {
+                        rainBalls[bi].pos.y = minY + r
+                        rainBalls[bi].vel.y = abs(rainBalls[bi].vel.y)
+                        spawnRainParticles(at: SIMD2<Float>(rainBalls[bi].pos.x, minY), normal: SIMD2<Float>(0, 1))
+                        handleDandelionHit(at: SIMD2<Float>(rainBalls[bi].pos.x, minY), normal: SIMD2<Float>(0, 1))
+                        rainWallHit = true
+                        rainWallHitScale = 1.0
+                    }
+                    if rainBalls[bi].pos.y + r > maxY {
+                        rainBalls[bi].pos.y = maxY - r
+                        rainBalls[bi].vel.y = -abs(rainBalls[bi].vel.y)
+                        spawnRainParticles(at: SIMD2<Float>(rainBalls[bi].pos.x, maxY), normal: SIMD2<Float>(0, -1))
+                        handleDandelionHit(at: SIMD2<Float>(rainBalls[bi].pos.x, maxY), normal: SIMD2<Float>(0, -1))
+                        rainWallHit = true
+                        rainWallHitScale = 1.0
+                    }
+                    
+                    // Block collisions (AABB vs circle)
+                    for i in 0..<rainBlocks.count {
+                        let block = rainBlocks[i]
+                        let bx = block.rect.x
+                        let by = block.rect.y
+                        let bw = block.rect.z
+                        let bh = block.rect.w
+                        
+                        let closestX = max(bx, min(rainBalls[bi].pos.x, bx + bw))
+                        let closestY = max(by, min(rainBalls[bi].pos.y, by + bh))
+                        let dx = rainBalls[bi].pos.x - closestX
+                        let dy = rainBalls[bi].pos.y - closestY
+                        let distSq = dx * dx + dy * dy
+                        
+                        if distSq < r * r {
+                            let dist = sqrt(distSq)
+                            if dist > 0.0001 {
+                                let nx = dx / dist
+                                let ny = dy / dist
+                                let dot = rainBalls[bi].vel.x * nx + rainBalls[bi].vel.y * ny
+                                rainBalls[bi].vel.x -= 2.0 * dot * nx
+                                rainBalls[bi].vel.y -= 2.0 * dot * ny
+                                rainBalls[bi].pos.x = closestX + nx * (r + 0.002)
+                                rainBalls[bi].pos.y = closestY + ny * (r + 0.002)
+                                spawnRainParticles(at: SIMD2<Float>(closestX, closestY), normal: SIMD2<Float>(nx, ny))
+                                handleDandelionHit(at: SIMD2<Float>(closestX, closestY), normal: SIMD2<Float>(nx, ny))
+                                rainBlocks[i].hitScale = 1.0
+                                rainBlockHit = true
+                                rainBlockHitMidiNote = block.midiNote
+                            } else {
+                                // Ball center is inside block — use block top surface
+                                rainBalls[bi].insideBlock = true
+                                rainBalls[bi].vel.y = -rainBalls[bi].vel.y
+                                rainBalls[bi].pos.y += (rainBalls[bi].vel.y > 0 ? 1 : -1) * (r + 0.002)
+                                let hitY = by  // block top surface
+                                handleDandelionHit(at: SIMD2<Float>(rainBalls[bi].pos.x, hitY), normal: SIMD2<Float>(0, -1))
+                                rainBlocks[i].hitScale = 1.0
+                                rainBlockHit = true
+                                rainBlockHitMidiNote = block.midiNote
+                            }
+                        }
                     }
                 }
+            } // end PinBall/Fall branch
+            
+            // Update dandelion lifecycle
+            updateDandelions(dt: safeDt)
+            
+            // Update particles — quick spark, fast fade
+            for i in (0..<rainParticles.count).reversed() {
+                rainParticles[i].life -= safeDt * 3.5
+                rainParticles[i].position += rainParticles[i].velocity * safeDt
+                rainParticles[i].velocity *= (1.0 - safeDt * 5.0)
+                if rainParticles[i].life <= 0 {
+                    rainParticles.remove(at: i)
+                }
             }
             
-            // Update particles
-            for i in (0..<plyParticles.count).reversed() {
-                plyParticles[i].life -= safeDt * 3.0
-                plyParticles[i].position += plyParticles[i].velocity * safeDt
-                plyParticles[i].velocity *= (1.0 - safeDt * 3.0)
-                if plyParticles[i].life <= 0 {
-                    plyParticles.remove(at: i)
+            // Decay block hit scale (fast pop → return to normal)
+            for i in 0..<rainBlocks.count {
+                if rainBlocks[i].hitScale > 0 {
+                    rainBlocks[i].hitScale -= safeDt * 6.0  // ~0.17s full decay
+                    if rainBlocks[i].hitScale < 0 { rainBlocks[i].hitScale = 0 }
                 }
+            }
+            
+            // Decay wall hit scale
+            if rainWallHitScale > 0 {
+                rainWallHitScale -= safeDt * 6.0
+                if rainWallHitScale < 0 { rainWallHitScale = 0 }
             }
             
             balls = [Ball(position: SIMD3(0.5, 0.5, 0.5), radius: 0.001)]

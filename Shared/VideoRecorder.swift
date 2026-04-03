@@ -29,6 +29,11 @@ final class VideoRecorder {
     private var videoInput: AVAssetWriterInput?
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
     
+    // Audio recording — tap on AVAudioEngine mainMixerNode
+    private var audioInput: AVAssetWriterInput?
+    private var audioEngine: AVAudioEngine?
+    private var audioStartHostTime: UInt64 = 0
+    
     // Triple-buffer: 3 pixel buffers to handle GPU pipeline depth
     // While buffer N is being blitted by GPU, buffer N-1 may still be held by
     // the writer queue waiting to append. Buffer N-2 is free.
@@ -64,7 +69,7 @@ final class VideoRecorder {
     
     // MARK: - Start Recording
     
-    func startRecording(device: MTLDevice, width: Int, height: Int, fps: Int = 30) {
+    func startRecording(device: MTLDevice, width: Int, height: Int, fps: Int = 30, audioEngine: AVAudioEngine? = nil) {
         guard state == .idle else { return }
         
         // Ensure even dimensions for H.264
@@ -137,11 +142,37 @@ final class VideoRecorder {
         )
         
         writer.add(input)
-        self.assetWriter = writer
         self.videoInput = input
         self.pixelBufferAdaptor = adaptor
         
-        // Start writing
+        // Add audio input BEFORE startWriting if audio engine provided
+        if let engine = audioEngine {
+            let mixerNode = engine.mainMixerNode
+            let format = mixerNode.outputFormat(forBus: 0)
+            
+            if format.sampleRate > 0 && format.channelCount > 0 {
+                let audioSettings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: format.sampleRate,
+                    AVNumberOfChannelsKey: format.channelCount,
+                    AVEncoderBitRateKey: 128_000
+                ]
+                
+                let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+                aInput.expectsMediaDataInRealTime = true
+                
+                if writer.canAdd(aInput) {
+                    writer.add(aInput)
+                    self.audioInput = aInput
+                    self.audioEngine = engine
+                    print("[VideoRecorder] Audio input added (\(format.sampleRate)Hz, \(format.channelCount)ch)")
+                }
+            }
+        }
+        
+        self.assetWriter = writer
+        
+        // Start writing — AFTER both video and audio inputs are added
         writer.startWriting()
         writer.startSession(atSourceTime: .zero)
         
@@ -149,6 +180,31 @@ final class VideoRecorder {
             print("[VideoRecorder] Writer failed to start: \(writer.error?.localizedDescription ?? "unknown")")
             cleanup()
             return
+        }
+        
+        // Install audio tap AFTER session started
+        if let engine = audioEngine, audioInput != nil {
+            self.audioStartHostTime = mach_absolute_time()
+            let writerQ = writerQueue
+            let startHost = self.audioStartHostTime
+            let mixerNode = engine.mainMixerNode
+            let format = mixerNode.outputFormat(forBus: 0)
+            
+            mixerNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, when in
+                writerQ.async {
+                    guard let self else { return }
+                    guard !self.writerFailed else { return }
+                    guard self.audioInput?.isReadyForMoreMediaData == true else { return }
+                    
+                    guard let sampleBuffer = self.createAudioSampleBuffer(from: buffer, when: when, startHostTime: startHost) else { return }
+                    
+                    if !self.audioInput!.append(sampleBuffer) {
+                        let errMsg = self.assetWriter?.error?.localizedDescription ?? "unknown"
+                        print("[VideoRecorder] Failed to append audio: \(errMsg)")
+                    }
+                }
+            }
+            print("[VideoRecorder] Audio tap installed")
         }
         
         startTime = CACurrentMediaTime()
@@ -159,6 +215,62 @@ final class VideoRecorder {
         writerFailed = false
         state = .recording
         print("[VideoRecorder] Recording started at \(w)x\(h) @ \(fps)fps")
+    }
+    
+    /// Convert AVAudioPCMBuffer + AVAudioTime → CMSampleBuffer with correct timing.
+    /// Called on writerQueue only.
+    private nonisolated func createAudioSampleBuffer(from buffer: AVAudioPCMBuffer, when: AVAudioTime, startHostTime: UInt64) -> CMSampleBuffer? {
+        let frameCount = buffer.frameLength
+        guard frameCount > 0 else { return nil }
+        
+        let format = buffer.format
+        let formatDesc = format.formatDescription
+        
+        // Compute presentation time relative to recording start
+        var timebaseInfo = mach_timebase_info_data_t()
+        mach_timebase_info(&timebaseInfo)
+        
+        let elapsedTicks = when.hostTime.subtractingReportingOverflow(startHostTime)
+        let hostTicks = elapsedTicks.overflow ? 0 : elapsedTicks.partialValue
+        let elapsedNanos = hostTicks * UInt64(timebaseInfo.numer) / UInt64(timebaseInfo.denom)
+        let elapsedSeconds = Double(elapsedNanos) / 1_000_000_000.0
+        
+        let pts = CMTime(seconds: max(0, elapsedSeconds), preferredTimescale: CMTimeScale(format.sampleRate))
+        
+        var sampleBuffer: CMSampleBuffer?
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: CMTimeScale(format.sampleRate)),
+            presentationTimeStamp: pts,
+            decodeTimeStamp: .invalid
+        )
+        
+        let status = CMSampleBufferCreate(
+            allocator: kCFAllocatorDefault,
+            dataBuffer: nil,
+            dataReady: false,
+            makeDataReadyCallback: nil,
+            refcon: nil,
+            formatDescription: formatDesc,
+            sampleCount: CMItemCount(frameCount),
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleSizeEntryCount: 0,
+            sampleSizeArray: nil,
+            sampleBufferOut: &sampleBuffer
+        )
+        
+        guard status == noErr, let sb = sampleBuffer else { return nil }
+        
+        let setStatus = CMSampleBufferSetDataBufferFromAudioBufferList(
+            sb,
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: 0,
+            bufferList: buffer.audioBufferList
+        )
+        
+        guard setStatus == noErr else { return nil }
+        return sb
     }
     
     /// Create a CVPixelBuffer + MTLTexture pair backed by IOSurface (zero-copy GPU/CPU sharing)
@@ -275,10 +387,17 @@ final class VideoRecorder {
         let totalFrames = frameCount
         print("[VideoRecorder] Stopping recording... (\(totalFrames) frames captured)")
         
+        // Remove audio tap first — stops new buffers from arriving
+        if let engine = audioEngine {
+            engine.mainMixerNode.removeTap(onBus: 0)
+            print("[VideoRecorder] Audio tap removed")
+        }
+        
         // Drain writerQueue first so all pending appends complete before finishing
         let writer = assetWriter
         let url = outputURL
-        let input = videoInput
+        let vInput = videoInput
+        let aInput = audioInput
         let queue = writerQueue
         
         queue.async {
@@ -286,7 +405,8 @@ final class VideoRecorder {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 
-                input?.markAsFinished()
+                vInput?.markAsFinished()
+                aInput?.markAsFinished()
                 
                 writer?.finishWriting {
                     Task { @MainActor [weak self] in
@@ -410,6 +530,8 @@ final class VideoRecorder {
         assetWriter = nil
         videoInput = nil
         pixelBufferAdaptor = nil
+        audioInput = nil
+        audioEngine = nil
     }
     
     enum RecordingError: LocalizedError {

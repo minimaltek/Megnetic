@@ -54,8 +54,27 @@ struct MetalMetaballView: UIViewRepresentable {
     var linesCameraLocked: Bool = false
     /// Called when long press toggles camera lock state in LINES mode
     var onCameraLockChanged: ((Bool) -> Void)? = nil
-    /// PLY scale mode: 0=OFF, 1=PENTATONIC, 2=MAJOR, 3=MINOR, 4=BLUES
-    var plyScaleMode: Int = 0
+    /// RAIN scale mode: 0=OFF, 1=PENTATONIC, 2=MAJOR, 3=MINOR, 4=BLUES
+    var rainScaleMode: Int = 0
+    /// RAIN instrument for block/wall sounds: 0=BASE, 1=PIANO, 2=VOICE, 3=WOOD
+    var rainBlockInst: Int = 0
+    var rainWallInst: Int = 0
+    /// Root note: 0=C, 1=C#, 2=D, ... 11=B
+    var rainRootNote: Int = 0
+    /// Octave offset: -2 to +2
+    var rainOctave: Int = 0
+    /// Number of balls in RAIN mode (1-3)
+    var rainBallCount: Int = 1
+    /// Delay enabled (wall sounds)
+    var rainDelayEnabled: Bool = false
+    /// Delay sync division index
+    var rainDelaySync: Int = 2
+    /// Delay feedback 0~0.95
+    var rainDelayFeedback: Float = 0.4
+    /// Delay wet/dry amount 0~1
+    var rainDelayAmount: Float = 0.3
+    /// RAIN category: 0=Fall, 1=PinBall
+    var rainCategory: Int = 0
     
     func makeCoordinator() -> MetaballRenderer {
         MetaballRenderer(simulation: simulation)
@@ -153,8 +172,19 @@ struct MetalMetaballView: UIViewRepresentable {
         uiView.onCameraLockChanged = onCameraLockChanged
         uiView.setCameraLocked(linesCameraLocked)
         
-        // PLY scale mode
-        context.coordinator.plyScaleMode = plyScaleMode
+        // RAIN settings
+        context.coordinator.rainScaleMode = rainScaleMode
+        context.coordinator.rainBlockInst = rainBlockInst
+        context.coordinator.rainWallInst = rainWallInst
+        context.coordinator.rainRootNote = rainRootNote
+        context.coordinator.rainOctave = rainOctave
+        context.coordinator.simulation.rainBallCount = rainBallCount
+        context.coordinator.rainDelayEnabled = rainDelayEnabled
+        context.coordinator.rainDelaySync = rainDelaySync
+        context.coordinator.rainDelayFeedback = rainDelayFeedback
+        context.coordinator.rainDelayAmount = rainDelayAmount
+        context.coordinator.rainCategory = rainCategory
+        context.coordinator.simulation.rainCategory = rainCategory
         
         // Notify parent of renderer reference
         onRendererReady?(context.coordinator)
@@ -240,12 +270,38 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
         longPressGesture.allowableMovement = 10
         addGestureRecognizer(longPressGesture)
         
+        // 2-finger double tap: align ball velocity to X or Y axis
+        let twoFingerDoubleTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerDoubleTap(_:)))
+        twoFingerDoubleTap.numberOfTapsRequired = 2
+        twoFingerDoubleTap.numberOfTouchesRequired = 2
+        twoFingerDoubleTap.delegate = self
+        addGestureRecognizer(twoFingerDoubleTap)
+        
         // Set initial camera
         syncCamera()
     }
     
     @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
         onDoubleTap?()
+    }
+    
+    @objc private func handleTwoFingerDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard let sim = renderer?.simulation else { return }
+        // Align all balls to random X or Y axis, preserving speed
+        for i in 0..<sim.rainBalls.count {
+            let speed = length(sim.rainBalls[i].vel)
+            guard speed > 0 else { continue }
+            let useX = Bool.random()
+            if useX {
+                // Align to X axis: keep sign of x velocity
+                let sign: Float = sim.rainBalls[i].vel.x >= 0 ? 1 : -1
+                sim.rainBalls[i].vel = SIMD2(sign * speed, 0)
+            } else {
+                // Align to Y axis: keep sign of y velocity
+                let sign: Float = sim.rainBalls[i].vel.y >= 0 ? 1 : -1
+                sim.rainBalls[i].vel = SIMD2(0, sign * speed)
+            }
+        }
     }
     
     // Allow all gestures to work simultaneously
@@ -300,13 +356,13 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
     
     // MARK: - Pan gesture (camera orbit)
     
-    // Track swipe start for PLY block creation
-    private var plySwipeStart: CGPoint?
+    // Track swipe start for RAIN block creation
+    private var rainSwipeStart: CGPoint?
     
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        // PLY mode: pan creates blocks instead of rotating camera
+        // RAIN mode: pan creates blocks instead of rotating camera
         if renderer?.simulation.orbitPattern == .polygon {
-            handlePlySwipe(gesture)
+            handleRainSwipe(gesture)
             return
         }
         
@@ -329,15 +385,15 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
         }
     }
     
-    private func handlePlySwipe(_ gesture: UIPanGestureRecognizer) {
+    private func handleRainSwipe(_ gesture: UIPanGestureRecognizer) {
         let location = gesture.location(in: self)
         
         switch gesture.state {
         case .began:
-            plySwipeStart = location
+            rainSwipeStart = location
             
         case .changed:
-            guard let start = plySwipeStart else { return }
+            guard let start = rainSwipeStart else { return }
             let startNorm = SIMD2<Float>(
                 Float(start.x / bounds.width),
                 Float(start.y / bounds.height)
@@ -350,22 +406,21 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
             let minY = min(startNorm.y, currentNorm.y)
             let w = abs(currentNorm.x - startNorm.x)
             let h = abs(currentNorm.y - startNorm.y)
-            renderer?.simulation.plyPendingBlock = SIMD4<Float>(minX, minY, max(w, 0.01), max(h, 0.01))
+            renderer?.simulation.rainPendingBlock = SIMD4<Float>(minX, minY, max(w, 0.01), max(h, 0.01))
             
         case .ended, .cancelled:
-            if let pending = renderer?.simulation.plyPendingBlock {
+            if let pending = renderer?.simulation.rainPendingBlock {
                 // Minimum size threshold to avoid accidental tiny blocks
                 if pending.z > 0.02 || pending.w > 0.02 {
-                    let area = pending.z * pending.w
-                    let note = renderer?.plyNoteForBlockArea(area) ?? (semitones: 0, noteName: "")
-                    var block = PlyBlock(rect: pending)
-                    block.semitones = note.semitones
+                    let note = renderer?.rainRandomNoteForBlock() ?? (midiNote: 60, noteName: "")
+                    var block = RainBlock(rect: pending)
+                    block.midiNote = note.midiNote
                     block.noteName = note.noteName
-                    renderer?.simulation.plyBlocks.append(block)
+                    renderer?.simulation.rainBlocks.append(block)
                 }
             }
-            renderer?.simulation.plyPendingBlock = nil
-            plySwipeStart = nil
+            renderer?.simulation.rainPendingBlock = nil
+            rainSwipeStart = nil
             
         default:
             break
@@ -375,7 +430,7 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
     // MARK: - Pinch gesture (camera zoom)
     
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        // PLY mode: no zoom
+        // RAIN mode: no zoom
         if renderer?.simulation.orbitPattern == .polygon { return }
         
         switch gesture.state {
@@ -396,10 +451,10 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
     }
     
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-        // PLY mode: long press toggles pause/resume
+        // RAIN mode: long press toggles pause/resume
         if renderer?.simulation.orbitPattern == .polygon {
             if gesture.state == .began {
-                renderer?.simulation.plyPaused.toggle()
+                renderer?.simulation.rainPaused.toggle()
             }
             return
         }

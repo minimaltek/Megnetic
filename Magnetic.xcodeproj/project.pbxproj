@@ -8,6 +8,10 @@
 
 /* Begin PBXBuildFile section */
 		E25E9C152F66513300C850FC /* VideoRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25E9C142F66513200C850FC /* VideoRecorder.swift */; };
+		E297E7A72F7F70EE003CD8FE /* CustomSoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E297E7A62F7F70EE003CD8FE /* CustomSoundManager.swift */; };
+		E297E7A82F7F70EE003CD8FE /* CustomSoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E297E7A62F7F70EE003CD8FE /* CustomSoundManager.swift */; };
+		E297E7AA2F7F7140003CD8FE /* SoundRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E297E7A92F7F7140003CD8FE /* SoundRecorderView.swift */; };
+		E297E7AB2F7F7140003CD8FE /* SoundRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E297E7A92F7F7140003CD8FE /* SoundRecorderView.swift */; };
 		E2BAD4322F6887C5002E08BC /* ImageCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2BAD4312F6887C5002E08BC /* ImageCropView.swift */; };
 		E2FCB5842F7393DC00E37A91 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */; };
 		E2FCB5852F7393DC00E37A91 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FCB5642F7393DC00E37A91 /* ContentView.swift */; };
@@ -35,6 +39,8 @@
 
 /* Begin PBXFileReference section */
 		E25E9C142F66513200C850FC /* VideoRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRecorder.swift; sourceTree = "<group>"; };
+		E297E7A62F7F70EE003CD8FE /* CustomSoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomSoundManager.swift; sourceTree = "<group>"; };
+		E297E7A92F7F7140003CD8FE /* SoundRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundRecorderView.swift; sourceTree = "<group>"; };
 		E2BAD4312F6887C5002E08BC /* ImageCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCropView.swift; sourceTree = "<group>"; };
 		E2C6D05D2F650B65007C1915 /* Magnetic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Magnetic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E2FCB5632F7393DC00E37A91 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioEngine.swift; sourceTree = "<group>"; };
@@ -151,6 +157,8 @@
 				E2FCB5692F7393DC00E37A91 /* OnboardingView.swift */,
 				E2BAD4312F6887C5002E08BC /* ImageCropView.swift */,
 				E25E9C142F66513200C850FC /* VideoRecorder.swift */,
+				E297E7A62F7F70EE003CD8FE /* CustomSoundManager.swift */,
+				E297E7A92F7F7140003CD8FE /* SoundRecorderView.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -274,9 +282,11 @@
 			files = (
 				E25E9C152F66513300C850FC /* VideoRecorder.swift in Sources */,
 				E2BAD4322F6887C5002E08BC /* ImageCropView.swift in Sources */,
+				E297E7A72F7F70EE003CD8FE /* CustomSoundManager.swift in Sources */,
 				E2FCB5912F73A2FD00E37A91 /* CameraController.swift in Sources */,
 				E2FCB5842F7393DC00E37A91 /* AudioEngine.swift in Sources */,
 				E2FCB5852F7393DC00E37A91 /* ContentView.swift in Sources */,
+				E297E7AB2F7F7140003CD8FE /* SoundRecorderView.swift in Sources */,
 				E2FCB5872F7393DC00E37A91 /* MetaballSimulation.swift in Sources */,
 				E2FCB58F2F73A16C00E37A91 /* PlatformTypes.swift in Sources */,
 				E2FCB5892F7393DC00E37A91 /* OnboardingView.swift in Sources */,
@@ -292,8 +302,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				E2FCB5AC2F73A72400E37A91 /* PlatformTypes.swift in Sources */,
+				E297E7A82F7F70EE003CD8FE /* CustomSoundManager.swift in Sources */,
 				E2FCB5AD2F73A72E00E37A91 /* PresetManager.swift in Sources */,
 				E2FCB5AE2F73A72E00E37A91 /* SettingsView.swift in Sources */,
+				E297E7AA2F7F7140003CD8FE /* SoundRecorderView.swift in Sources */,
 				E2FCB5AF2F73A72E00E37A91 /* OnboardingView.swift in Sources */,
 				E2FCB5B02F73A72E00E37A91 /* ContentView.swift in Sources */,
 				E2FCB5B12F73A72E00E37A91 /* Shaders.metal in Sources */,

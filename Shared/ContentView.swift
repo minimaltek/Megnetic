@@ -11,6 +11,9 @@ import Combine
 struct ContentView: View {
     
     @Environment(\.scenePhase) private var scenePhase
+    #if os(iOS)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    #endif
     
     @State private var simulation = MetaballSimulation(count: 10)
     @StateObject private var audioEngine = AudioEngine()
@@ -41,9 +44,9 @@ struct ContentView: View {
     @AppStorage("envIntensity") private var envIntensity: Double = 1.0
     @AppStorage("isBPMEnabled") private var isBPMEnabled: Bool = true
     @AppStorage("orbitPattern") private var orbitPattern: Int = 0
-    @AppStorage("basicMode") private var basicMode: Int = 0  // 0=METABALL, 1=LINE, 2=BOX, 3=PLY
-    @AppStorage("polygonSides") private var polygonSides: Double = 4  // PLY: 3-8
-    @AppStorage("polygonInset") private var polygonInset: Double = 0.0  // PLY star: 0=polygon, 1=fully collapsed
+    @AppStorage("basicMode") private var basicMode: Int = 0  // 0=METABALL, 1=LINE, 2=BOX, 3=RAIN
+    @AppStorage("polygonSides") private var polygonSides: Double = 4  // RAIN: 3-8
+    @AppStorage("polygonInset") private var polygonInset: Double = 0.0  // RAIN star: 0=polygon, 1=fully collapsed
     @State private var customEnvImages: [PlatformImage?] = [nil, nil, nil]
     @State private var customEnvImageVersions: [Int] = [0, 0, 0]
     @State private var originalPhotoImages: [PlatformImage?] = [nil, nil, nil]
@@ -57,16 +60,29 @@ struct ContentView: View {
     @AppStorage("autoBgHue") private var autoBgHue: Bool = false
     @AppStorage("spacing") private var spacing: Double = 1.0
     @AppStorage("orbitRange") private var orbitRange: Double = 1.0
-    @AppStorage("gridMode") private var gridMode: Bool = false
+    @AppStorage("gridMode") private var gridMode: Bool = true
     @AppStorage("fps") private var fps: Int = 60
     @AppStorage("manualBPM") private var manualBPM: Double = 60
+    @AppStorage("manualBPM_metaball") private var manualBPM_metaball: Double = 60
+    @AppStorage("manualBPM_line") private var manualBPM_line: Double = 120
+    @AppStorage("manualBPM_rain") private var manualBPM_rain: Double = 30
     @AppStorage("recEnabled") private var recEnabled: Bool = false
     @AppStorage("consoleMode") private var consoleMode: Bool = false
     @AppStorage("brightnessSync") private var brightnessSync: Bool = false
     @AppStorage("brightnessSyncMax") private var brightnessSyncMax: Double = 3.0
     @AppStorage("blendK") private var blendK: Double = 0.35
     @AppStorage("boxNoiseType") private var boxNoiseType: Int = 0
-    @AppStorage("plyScaleMode") private var plyScaleMode: Int = 0  // 0=OFF, 1=PENTA, 2=MAJOR, 3=MINOR, 4=BLUES
+    @AppStorage("plyScaleMode") private var rainScaleMode: Int = 1  // 1=PENTA, 2=MAJOR, 3=MINOR, 4=BLUES
+    @AppStorage("plyBlockInst") private var rainBlockInst: Int = 0  // 0=BASE, 1=PIANO, 2=VOICE, 3=WOOD
+    @AppStorage("plyWallInst") private var rainWallInst: Int = 0   // 0=BASE, 1=PIANO, 2=VOICE, 3=WOOD
+    @AppStorage("plyRootNote") private var rainRootNote: Int = 0  // 0=C, 1=C#, 2=D, ... 11=B
+    @AppStorage("plyOctave") private var rainOctave: Int = 0      // -2 to +2 octave offset
+    @AppStorage("plyBallCount") private var rainBallCount: Int = 1 // 1-3 balls in RAIN mode
+    @AppStorage("plyDelayEnabled") private var rainDelayEnabled: Bool = true
+    @AppStorage("plyDelaySync") private var rainDelaySync: Int = 2  // index: default 2 = 1/8D
+    @AppStorage("plyDelayFeedback") private var rainDelayFeedback: Double = 0.65
+    @AppStorage("plyDelayAmount") private var rainDelayAmount: Double = 0.10
+    @AppStorage("plyCategory") private var rainCategory: Int = 0  // 0=Fall, 1=PinBall
     
     @State private var micBrightnessBoost: Float = 1.0
     @State private var rendererRef: MetaballRenderer?
@@ -102,12 +118,21 @@ struct ContentView: View {
         return (Float(rgb.r), Float(rgb.g), Float(rgb.b))
     }
     
+    /// Landscape detection: on iOS, verticalSizeClass == .compact means landscape
+    private var isLandscape: Bool {
+        #if os(iOS)
+        return verticalSizeClass == .compact
+        #else
+        return false
+        #endif
+    }
+    
     var body: some View {
         Group {
         ZStack {
             mainContent
             #if os(iOS)
-                .sheet(isPresented: $showSettings) {
+                .sheet(isPresented: isLandscape ? .constant(false) : $showSettings) {
                     settingsSheet
                 }
                 .fullScreenCover(isPresented: $showOnboarding) {
@@ -122,6 +147,28 @@ struct ContentView: View {
                         showOnboarding = false
                     }
                 }
+            #endif
+
+            #if os(iOS)
+            // Landscape: right-aligned overlay panel (portrait width preserved)
+            if isLandscape && showSettings {
+                HStack(spacing: 0) {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                showSettings = false
+                            }
+                        }
+                    
+                    settingsSheetLandscape
+                        .frame(width: 380)
+                        .background(Color(white: 0.06))
+                        .ignoresSafeArea(edges: .bottom)
+                        .transition(.move(edge: .trailing))
+                }
+                .transition(.opacity)
+            }
             #endif
 
             // macOS: settings as centered overlay (dismissible by tapping background)
@@ -157,7 +204,15 @@ struct ContentView: View {
             .onChange(of: camMode) { handleCamModeChange($0) }
             .onChange(of: gainMode) { audioEngine.gainMode = $0 }
             .onChange(of: boxNoiseType) { handleBoxNoiseChange($0) }
+            .onChange(of: rainCategory) { simulation.rainCategory = $0; simulation.resetBalls(count: Int(ballCount)) }
             .onChange(of: manualGain) { audioEngine.manualGainValue = Float($0) }
+            .onChange(of: manualBPM) { newVal in
+                switch basicMode {
+                case 1:  manualBPM_line = newVal
+                case 3:  manualBPM_rain = newVal
+                default: manualBPM_metaball = newVal
+                }
+            }
             .onChange(of: scenePhase) { isInBackground = ($0 != .active) }
             .onReceive(viewTimer) { _ in handleCamModeTick() }
             .onReceive(viewTimer) { _ in handleBrightnessSyncTick() }
@@ -199,7 +254,17 @@ struct ContentView: View {
                 onCameraLockChanged: { locked in
                     linesCameraLocked = locked
                 },
-                plyScaleMode: plyScaleMode)
+                rainScaleMode: rainScaleMode,
+                rainBlockInst: rainBlockInst,
+                rainWallInst: rainWallInst,
+                rainRootNote: rainRootNote,
+                rainOctave: rainOctave,
+                rainBallCount: rainBallCount,
+                rainDelayEnabled: rainDelayEnabled,
+                rainDelaySync: rainDelaySync,
+                rainDelayFeedback: Float(rainDelayFeedback),
+                rainDelayAmount: Float(rainDelayAmount),
+                rainCategory: rainCategory)
                 .onChange(of: isRecording) { newValue in
                     if newValue {
                         recordingStartTime = .now
@@ -249,24 +314,30 @@ struct ContentView: View {
                 
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 6) {
-                        // Active toggle indicators (persistent)
-                        ActiveModesView(
-                            tapOrbit: tapOrbit,
-                            tapColor: tapColor,
-                            tapBall: tapBall,
-                            camMode: camMode,
-                            orbitPattern: orbitPattern,
-                            basicMode: basicMode
-                        )
-                        
-                        // BPM indicator (always visible)
-                        BPMDisplayView(
-                            audioEngine: audioEngine,
-                            isMicEnabled: isMicEnabled,
-                            isBPMAutoMode: isBPMEnabled,
-                            manualBPM: manualBPM
-                        )
+                        if basicMode == 3 {
+                            // RAIN mode: single-line HUD (icon + BPM)
+                            RainHUDView(manualBPM: manualBPM)
+                        } else {
+                            // Active toggle indicators (persistent)
+                            ActiveModesView(
+                                tapOrbit: tapOrbit,
+                                tapColor: tapColor,
+                                tapBall: tapBall,
+                                camMode: camMode,
+                                orbitPattern: orbitPattern,
+                                basicMode: basicMode
+                            )
+                            
+                            // BPM indicator (always visible)
+                            BPMDisplayView(
+                                audioEngine: audioEngine,
+                                isMicEnabled: isMicEnabled,
+                                isBPMAutoMode: isBPMEnabled,
+                                manualBPM: manualBPM
+                            )
+                        }
                     }
+                    Spacer()
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
                         if consoleMode {
@@ -303,6 +374,8 @@ struct ContentView: View {
     
     private func handleMicEnabledChange(_ newValue: Bool) {
         if newValue { audioEngine.requestPermissionAndStart() } else { audioEngine.stop() }
+        // BPM AUTO requires mic — force Manual when mic is off
+        if !newValue && isBPMEnabled { isBPMEnabled = false }
     }
     
     private func handleBallSizeChange(_ newValue: Double) {
@@ -362,6 +435,14 @@ struct ContentView: View {
             }
             simulation.resetBalls(count: Int(ballCount))
             linesCameraLocked = (pattern == .lines || pattern == .polygon)
+        }
+        // RAIN mode has no mic — force BPM Manual
+        if basicMode == 3 && isBPMEnabled { isBPMEnabled = false }
+        // Restore per-mode manual BPM
+        switch basicMode {
+        case 1:  manualBPM = manualBPM_line
+        case 3:  manualBPM = manualBPM_rain
+        default: manualBPM = manualBPM_metaball
         }
     }
     
@@ -439,13 +520,14 @@ struct ContentView: View {
         simulation.boxDensity = Float(ballCount)
         simulation.polygonSides = Int(polygonSides)
         simulation.polygonInset = Float(polygonInset)
+        simulation.rainCategory = rainCategory
         // Backward compat: migrate old orbitPattern 9-11 to basicMode
         if orbitPattern >= 9 {
             switch orbitPattern {
             case 9:  basicMode = 1  // LINE
             case 10: basicMode = 1  // was PCD, fallback to LINE
             case 11: basicMode = 2  // BOX
-            case 12: basicMode = 3  // PLY
+            case 12: basicMode = 3  // RAIN
             default: break
             }
             orbitPattern = 0  // reset to RND for metaball sub-orbit
@@ -460,6 +542,16 @@ struct ContentView: View {
             simulation.boxNoiseType = noiseType
         }
         simulation.resetBalls(count: Int(ballCount))
+        // Restore per-mode manual BPM on launch
+        switch basicMode {
+        case 1:  manualBPM = manualBPM_line
+        case 3:  manualBPM = manualBPM_rain
+        default: manualBPM = manualBPM_metaball
+        }
+        // BPM AUTO requires mic — force Manual when mic unavailable
+        if (!isMicEnabled || basicMode == 3) && isBPMEnabled {
+            isBPMEnabled = false
+        }
         if isMicEnabled {
             audioEngine.requestPermissionAndStart()
         }
@@ -470,6 +562,11 @@ struct ContentView: View {
     @State private var wirePhase: Bool = false  // true = currently showing WIRE reveal
     
     private func handleDoubleTap() {
+        // RAIN mode: double-tap resets balls (both PinBall and Fall)
+        if basicMode == 3 {
+            simulation.resetBalls(count: Int(ballCount))
+            return
+        }
         guard tapOrbit || tapColor || tapBall || camMode else { return }
         
         doubleTapCount += 1
@@ -529,7 +626,7 @@ struct ContentView: View {
         switch basicMode {
         case 1: return 9   // LINE
         case 2: return 11  // BOX
-        case 3: return 12  // PLY
+        case 3: return 12  // RAIN
         default: return orbitPattern  // 0-8 (metaball orbits)
         }
     }
@@ -541,7 +638,7 @@ struct ContentView: View {
             let next = orbitPattern + 1
             orbitPattern = next > maxPattern ? 0 : next
         } else if basicMode == 1 {
-            // LINE: cycle through sub-orbits (0-9: RND..PLY)
+            // LINE: cycle through sub-orbits (0-9: RND..RAIN)
             let maxSub = 9
             let next = orbitPattern + 1
             orbitPattern = next > maxSub ? 0 : next
@@ -616,7 +713,7 @@ struct ContentView: View {
             // 60% chance of max orbit size
             orbitRange = Double.random(in: 0..<1) < 0.6 ? 2.0 : Double.random(in: 0.3...2.0)
         }
-        // LINE mode: also randomize PLY params and force redraw
+        // LINE mode: also randomize RAIN params and force redraw
         if basicMode == 1 {
             if orbitPattern == 9 {
                 polygonSides = Double(Int.random(in: 3...8))
@@ -628,7 +725,9 @@ struct ContentView: View {
     
     private var settingsButton: some View {
         Button {
-            showSettings = true
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showSettings = true
+            }
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.body)
@@ -639,6 +738,28 @@ struct ContentView: View {
     }
     
     private var settingsSheet: some View {
+        settingsContent
+        #if os(iOS)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Color(white: 0.06))
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(.enabled(upThrough: .large))
+        .interactiveDismissDisabled(false)
+        #else
+        .background(Color(white: 0.06))
+        #endif
+    }
+    
+    #if os(iOS)
+    /// Landscape overlay version — no sheet presentation modifiers
+    private var settingsSheetLandscape: some View {
+        settingsContent
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    #endif
+    
+    /// Shared settings content used by both sheet and landscape overlay
+    private var settingsContent: some View {
         SettingsView(
             ballCount: $ballCount,
             isMicEnabled: $isMicEnabled,
@@ -683,7 +804,17 @@ struct ContentView: View {
             manualGain: $manualGain,
             originalPhotoImages: $originalPhotoImages,
             boxNoiseType: $boxNoiseType,
-            plyScaleMode: $plyScaleMode,
+            rainScaleMode: $rainScaleMode,
+            rainBlockInst: $rainBlockInst,
+            rainWallInst: $rainWallInst,
+            rainRootNote: $rainRootNote,
+            rainOctave: $rainOctave,
+            rainBallCount: $rainBallCount,
+            rainDelayEnabled: $rainDelayEnabled,
+            rainDelaySync: $rainDelaySync,
+            rainDelayFeedback: $rainDelayFeedback,
+            rainDelayAmount: $rainDelayAmount,
+            rainCategory: $rainCategory,
             onLoadPreset: { resyncAfterPresetLoad() },
             onSavePreset: { slotIndex, completion in
                 screenshotPending = true
@@ -694,17 +825,14 @@ struct ContentView: View {
                     }
                     completion(image)
                 }
+            },
+            onCustomSoundSaved: { slot in
+                rendererRef?.reloadCustomBlockBuffer(slot: slot)
+            },
+            onRecorderOpen: {
+                rendererRef?.stopAllRainAudio()
             }
         )
-        #if os(iOS)
-        .presentationDetents([.medium])
-        .presentationBackground(Color(white: 0.06))
-        .presentationDragIndicator(.visible)
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        .interactiveDismissDisabled(false)
-        #else
-        .background(Color(white: 0.06))
-        #endif
     }
     
     // MARK: - Custom ENV Image Persistence
@@ -752,13 +880,14 @@ struct ContentView: View {
         simulation.boxDensity = Float(ballCount)
         simulation.polygonSides = Int(polygonSides)
         simulation.polygonInset = Float(polygonInset)
+        simulation.rainCategory = rainCategory
         // Backward compat: migrate old preset orbitPattern 9-12 → basicMode
         if orbitPattern >= 9 {
             switch orbitPattern {
             case 9:  basicMode = 1
             case 10: basicMode = 1  // was PCD, fallback to LINE
             case 11: basicMode = 2  // BOX
-            case 12: basicMode = 3  // PLY
+            case 12: basicMode = 3  // RAIN
             default: break
             }
             orbitPattern = 0
@@ -901,7 +1030,7 @@ struct ActiveModesView: View {
         "dice", "circle", "globe", "circle.circle",
         "hurricane", "atom", "lungs", "infinity", "water.waves", "hexagon"
     ]
-    private let basicIcons = ["drop.fill", "line.3.horizontal", "square.grid.3x3.topleft.filled", "play.fill"]
+    private let basicIcons = ["drop.fill", "line.3.horizontal", "square.grid.3x3.topleft.filled", "cloud.rain"]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -957,6 +1086,31 @@ struct ActiveModesView: View {
     }
 }
 
+// MARK: - Rain HUD (single line: icon + BPM)
+
+struct RainHUDView: View {
+    let manualBPM: Double
+    
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60.0 / max(manualBPM, 1))) { context in
+            HStack(spacing: 6) {
+                Image(systemName: "cloud.rain")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                
+                ManualBeatDot(date: context.date)
+                
+                Text("\(Int(manualBPM))")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.gray)
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.bottom, 16)
+        .allowsHitTesting(false)
+    }
+}
+
 // MARK: - Console (parameter monitor)
 
 struct ConsoleView: View {
@@ -973,7 +1127,7 @@ struct ConsoleView: View {
     let orbitShrink: Float
     
     private let orbitNames = ["RND", "CRC", "SPH", "TOR", "SPI", "SAT", "DNA", "FIG8", "WAV"]
-    private let basicNames = ["META", "LINE", "BOX", "PLY"]
+    private let basicNames = ["META", "LINE", "BOX", "RAIN"]
     
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {

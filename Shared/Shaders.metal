@@ -1019,25 +1019,25 @@ fragment float4 boxFragment(
     return float4(clamp(color, float3(0.0), float3(1.0)) * alpha, alpha);
 }
 
-// MARK: - PLY (Play) Mode Shaders
+// MARK: - RAIN (Play) Mode Shaders
 
-struct PlyVertexIn {
+struct RainVertexIn {
     packed_float2 position;  // NDC (-1..1)
     packed_float4 color;     // RGBA
     float pointSize;         // for point primitives (ball and particles)
 };
 
-struct PlyVertexOut {
+struct RainVertexOut {
     float4 position [[position]];
     float4 color;
     float pointSize [[point_size]];
 };
 
-vertex PlyVertexOut plyVertex(
+vertex RainVertexOut rainVertex(
     uint vid [[vertex_id]],
-    constant PlyVertexIn *vertices [[buffer(0)]]
+    constant RainVertexIn *vertices [[buffer(0)]]
 ) {
-    PlyVertexOut out;
+    RainVertexOut out;
     float2 pos = float2(vertices[vid].position);
     out.position = float4(pos.x, pos.y, 0.0, 1.0);
     out.color = float4(vertices[vid].color);
@@ -1045,15 +1045,15 @@ vertex PlyVertexOut plyVertex(
     return out;
 }
 
-fragment float4 plyFragment(
-    PlyVertexOut in [[stage_in]]
+fragment float4 rainFragment(
+    RainVertexOut in [[stage_in]]
 ) {
     return in.color;
 }
 
-// PLY point fragment: circular point with soft edges
-fragment float4 plyPointFragment(
-    PlyVertexOut in [[stage_in]],
+// RAIN point fragment: circular point with soft edges
+fragment float4 rainPointFragment(
+    RainVertexOut in [[stage_in]],
     float2 pointCoord [[point_coord]]
 ) {
     float dist = length(pointCoord - float2(0.5));

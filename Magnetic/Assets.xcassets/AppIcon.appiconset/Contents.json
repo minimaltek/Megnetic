@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Magnetic_ICON.jpg",
+      "filename" : "Magnetic_ICON.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Magnetic_ICON 1.jpg",
+      "filename" : "Magnetic_ICON 1.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "Magnetic_ICON 2.jpg",
+      "filename" : "Magnetic_ICON 2.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
