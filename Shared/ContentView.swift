@@ -312,6 +312,38 @@ struct ContentView: View {
                         .padding(.bottom, 20)
                 }
                 
+                // DRAW mode overlay
+                if simulation.isDrawingMode {
+                    VStack {
+                        Text("Draw YOUR LINE.")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .tracking(4)
+                            .foregroundStyle(.white)
+                            .padding(.top, 120)
+                        
+                        Spacer()
+                        
+                        HStack {
+                            Spacer()
+                            Button {
+                                simulation.prepareDrawPath(gridMode: gridMode)
+                                simulation.accumulatedLines.removeAll()
+                                // Unlock camera after drawing is done
+                                linesCameraLocked = false
+                            } label: {
+                                Text("OK")
+                                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 56, height: 56)
+                                    .background(Circle().fill(Color.white.opacity(0.2)))
+                            }
+                            .padding(.trailing, 24)
+                            .padding(.bottom, 80)
+                        }
+                    }
+                    .allowsHitTesting(true)
+                }
+                
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 6) {
                         if basicMode == 3 {
@@ -423,6 +455,19 @@ struct ContentView: View {
         } else if basicMode == 1 {
             simulation.lineSubOrbit = newValue
             simulation.orbitPattern = .lines
+            if newValue == 10 {
+                // Enter DRAW mode — lock camera to front so user can draw on a flat plane
+                simulation.isDrawingMode = true
+                simulation.drawPath = []
+                simulation.drawPathReady = false
+                simulation.accumulatedLines.removeAll()
+                linesCameraLocked = true
+            } else {
+                // Exit DRAW mode if switching away
+                simulation.isDrawingMode = false
+                simulation.drawPathReady = false
+                linesCameraLocked = false
+            }
             simulation.resetBalls(count: Int(ballCount))
         }
     }
@@ -562,6 +607,16 @@ struct ContentView: View {
     @State private var wirePhase: Bool = false  // true = currently showing WIRE reveal
     
     private func handleDoubleTap() {
+        // DRAW mode: double-tap re-enters drawing mode
+        if basicMode == 1 && simulation.lineSubOrbit == 10 && simulation.drawPathReady {
+            simulation.isDrawingMode = true
+            simulation.drawPath = []
+            simulation.drawPathReady = false
+            simulation.accumulatedLines.removeAll()
+            linesCameraLocked = true
+            return
+        }
+        
         // RAIN mode: double-tap resets balls (both PinBall and Fall)
         if basicMode == 3 {
             simulation.resetBalls(count: Int(ballCount))
@@ -638,8 +693,8 @@ struct ContentView: View {
             let next = orbitPattern + 1
             orbitPattern = next > maxPattern ? 0 : next
         } else if basicMode == 1 {
-            // LINE: cycle through sub-orbits (0-9: RND..RAIN)
-            let maxSub = 9
+            // LINE: cycle through sub-orbits (0-10: RND..DRAW)
+            let maxSub = 10
             let next = orbitPattern + 1
             orbitPattern = next > maxSub ? 0 : next
         } else {
@@ -816,6 +871,22 @@ struct ContentView: View {
             rainDelayAmount: $rainDelayAmount,
             rainCategory: $rainCategory,
             onLoadPreset: { resyncAfterPresetLoad() },
+            onPreSavePreset: {
+                // Encode rainBlocks to UserDefaults before PresetManager.save()
+                let blocks = simulation.rainBlocks.map { block -> [String: Any] in
+                    return [
+                        "x": Double(block.rect.x),
+                        "y": Double(block.rect.y),
+                        "w": Double(block.rect.z),
+                        "h": Double(block.rect.w),
+                        "midiNote": Int(block.midiNote),
+                        "noteName": block.noteName
+                    ]
+                }
+                if let data = try? JSONSerialization.data(withJSONObject: blocks) {
+                    UserDefaults.standard.set(data, forKey: "rainBlocksData")
+                }
+            },
             onSavePreset: { slotIndex, completion in
                 screenshotPending = true
                 rendererRef?.screenshotCompletion = { image in
@@ -901,7 +972,29 @@ struct ContentView: View {
         if let noiseType = BoxNoiseType(rawValue: boxNoiseType) {
             simulation.boxNoiseType = noiseType
         }
+        // Restore per-mode BPM
+        switch basicMode {
+        case 1:  manualBPM = manualBPM_line
+        case 3:  manualBPM = manualBPM_rain
+        default: manualBPM = manualBPM_metaball
+        }
         simulation.resetBalls(count: Int(ballCount))
+        // Restore saved rain blocks AFTER resetBalls (which clears rainBlocks in RAIN mode)
+        if let data = UserDefaults.standard.data(forKey: "rainBlocksData"),
+           let blocks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            simulation.rainBlocks = blocks.compactMap { dict in
+                guard let x = (dict["x"] as? NSNumber)?.floatValue,
+                      let y = (dict["y"] as? NSNumber)?.floatValue,
+                      let w = (dict["w"] as? NSNumber)?.floatValue,
+                      let h = (dict["h"] as? NSNumber)?.floatValue else { return nil }
+                var block = RainBlock(rect: SIMD4<Float>(x, y, w, h))
+                block.midiNote = UInt8((dict["midiNote"] as? NSNumber)?.intValue ?? 60)
+                block.noteName = (dict["noteName"] as? String) ?? ""
+                return block
+            }
+        } else {
+            simulation.rainBlocks = []
+        }
         if isMicEnabled && !audioEngine.isRunning {
             audioEngine.requestPermissionAndStart()
         } else if !isMicEnabled && audioEngine.isRunning {

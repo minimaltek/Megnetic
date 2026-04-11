@@ -168,9 +168,14 @@ struct MetalMetaballView: UIViewRepresentable {
             context.coordinator.stopRecording()
         }
         
-        // Camera lock for LINES mode
+        // Camera lock for LINES mode / DRAW mode
         uiView.onCameraLockChanged = onCameraLockChanged
-        uiView.setCameraLocked(linesCameraLocked)
+        if simulation.isDrawingMode {
+            // DRAW mode: force front view lock
+            uiView.lockCameraToFront()
+        } else {
+            uiView.setCameraLocked(linesCameraLocked)
+        }
         
         // RAIN settings
         context.coordinator.rainScaleMode = rainScaleMode
@@ -354,12 +359,26 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
         camera.isLocked = locked
     }
     
+    /// Force camera to front view and lock (for DRAW mode)
+    func lockCameraToFront() {
+        guard !camera.isLocked else { return }
+        camera.snapToFront()
+        renderer?.cameraDistance = 3.0
+        renderer?.baseCameraDistance = 3.0
+    }
+    
     // MARK: - Pan gesture (camera orbit)
     
     // Track swipe start for RAIN block creation
     private var rainSwipeStart: CGPoint?
     
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        // DRAW mode: capture path instead of rotating camera
+        if renderer?.simulation.isDrawingMode == true {
+            handleDrawInput(gesture)
+            return
+        }
+        
         // RAIN mode: pan creates blocks instead of rotating camera
         if renderer?.simulation.orbitPattern == .polygon {
             handleRainSwipe(gesture)
@@ -427,11 +446,65 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
         }
     }
     
+    // MARK: - DRAW mode touch input
+    
+    private func handleDrawInput(_ gesture: UIPanGestureRecognizer) {
+        let location = gesture.location(in: self)
+        let normalized = SIMD2<Float>(
+            Float(location.x / bounds.width),
+            Float(location.y / bounds.height)
+        )
+        
+        switch gesture.state {
+        case .began:
+            // Add a break marker (NaN) to separate strokes, then start new stroke
+            if !(renderer?.simulation.drawPath.isEmpty ?? true) {
+                renderer?.simulation.drawPath.append(SIMD2<Float>(Float.nan, Float.nan))
+            }
+            renderer?.simulation.drawPath.append(normalized)
+            
+        case .changed:
+            guard let sim = renderer?.simulation else { return }
+            if let last = sim.drawPath.last {
+                // Skip distance check if last point was a stroke break (NaN)
+                let isNewStroke = last.x.isNaN
+                let dx = normalized.x - last.x
+                let dy = normalized.y - last.y
+                let dist = sqrt(dx * dx + dy * dy)
+                if isNewStroke || dist > 0.005 {
+                    renderer?.simulation.drawPath.append(normalized)
+                    // Add preview segment (skip if starting a new stroke)
+                    if !isNewStroke {
+                        let from = SIMD3<Float>((last.x - 0.5) * 0.6, (0.5 - last.y) * 0.6, 0)
+                        let to = SIMD3<Float>((normalized.x - 0.5) * 0.6, (0.5 - normalized.y) * 0.6, 0)
+                        let center = SIMD3<Float>(0.5, 0.5, 0.5)
+                        let seg = LineSegment(
+                            start: center + from,
+                            end: center + to,
+                            color: SIMD4<Float>(1, 1, 1, 0.4),
+                            progress: 1.0,
+                            drawSpeed: 1.0,
+                            hueT: 0
+                        )
+                        renderer?.simulation.accumulatedLines.append(seg)
+                    }
+                }
+            }
+            
+        case .ended, .cancelled:
+            break  // Path finalized when user taps OK
+            
+        default:
+            break
+        }
+    }
+    
     // MARK: - Pinch gesture (camera zoom)
     
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        // RAIN mode: no zoom
+        // RAIN mode / DRAW mode: no zoom
         if renderer?.simulation.orbitPattern == .polygon { return }
+        if renderer?.simulation.isDrawingMode == true { return }
         
         switch gesture.state {
         case .changed:
@@ -458,6 +531,9 @@ final class TouchableMTKView: MTKView, UIGestureRecognizerDelegate {
             }
             return
         }
+        
+        // DRAW mode: ignore long press (camera must stay locked to front)
+        if renderer?.simulation.isDrawingMode == true { return }
         
         // LINES / POINT CLOUD mode: long press cycles through 6 axis views
         // LP → lock(front) → LP → unlock → LP → lock(right) → LP → unlock → ...

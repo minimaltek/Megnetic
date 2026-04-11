@@ -89,6 +89,7 @@ enum OrbitPattern: Int, CaseIterable {
     case lines = 9
     case box = 11
     case polygon = 12
+    case draw = 13
 }
 
 /// Noise type for BOX sculpture
@@ -251,6 +252,12 @@ final class MetaballSimulation {
     var polygonSides: Int = 4
     /// Polygon inset factor: 0 = normal polygon, 1 = fully collapsed midpoints to center (star shape)
     var polygonInset: Float = 0.0
+    
+    // DRAW orbit mode state
+    var drawPath: [SIMD2<Float>] = []          // Raw touch points (normalized 0..1)
+    var drawPathSmoothed: [SIMD3<Float>] = []  // Resampled 3D path for tracer
+    var isDrawingMode: Bool = false
+    var drawPathReady: Bool = false
     
     // BOX pattern state — Noise sculpture with hysteresis
     var boxInstances: [BoxInstance] = []
@@ -642,6 +649,8 @@ final class MetaballSimulation {
         case .box:
             return OrbitParams(cx: 0.5, cy: 0.5, angle: 0, orbitR: 0, speed: 0, radius: 0.001)
         case .polygon:
+            return OrbitParams(cx: 0.5, cy: 0.5, angle: 0, orbitR: 0, speed: 0, radius: 0.001)
+        case .draw:
             return OrbitParams(cx: 0.5, cy: 0.5, angle: 0, orbitR: 0, speed: 0, radius: 0.001)
         }
     }
@@ -1859,6 +1868,89 @@ final class MetaballSimulation {
     }
     
     /// Map lineSubOrbit (1-8) to the corresponding OrbitPattern for path evaluation
+    // MARK: - DRAW orbit path conversion
+    
+    /// Convert raw 2D touch path to a smooth 3D path for tracer evaluation
+    func prepareDrawPath(gridMode: Bool) {
+        guard drawPath.count >= 2 else { return }
+        
+        // Split drawPath into strokes by NaN separators
+        var strokes: [[SIMD2<Float>]] = []
+        var current: [SIMD2<Float>] = []
+        for pt in drawPath {
+            if pt.x.isNaN {
+                if current.count >= 2 { strokes.append(current) }
+                current = []
+            } else {
+                current.append(pt)
+            }
+        }
+        if current.count >= 2 { strokes.append(current) }
+        guard !strokes.isEmpty else { return }
+        
+        // Resample each stroke proportionally, total 200 points
+        // Insert NaN separator between strokes so tracer jumps instead of connecting
+        let totalRawCount = strokes.reduce(0) { $0 + $1.count }
+        drawPathSmoothed = []
+        let nanMarker = SIMD3<Float>(Float.nan, Float.nan, Float.nan)
+        for (si, stroke) in strokes.enumerated() {
+            let share = max(2, Int(Float(stroke.count) / Float(totalRawCount) * 200))
+            let resampled = resampleDrawPath(stroke, targetCount: share)
+            if gridMode {
+                drawPathSmoothed.append(contentsOf: resampled.map { pt in
+                    let x = (pt.x - 0.5) * 0.6
+                    let y = (0.5 - pt.y) * 0.6
+                    return SIMD3<Float>(x, y, 0)
+                })
+            } else {
+                // GRID OFF: flat path, drift handles 3D movement
+                drawPathSmoothed.append(contentsOf: resampled.map { pt in
+                    let x = (pt.x - 0.5) * 0.6
+                    let y = (0.5 - pt.y) * 0.6
+                    return SIMD3<Float>(x, y, 0)
+                })
+            }
+            // Add NaN separator between strokes (not after the last one)
+            if si < strokes.count - 1 {
+                drawPathSmoothed.append(nanMarker)
+            }
+        }
+        
+        drawPathReady = true
+        isDrawingMode = false
+    }
+    
+    /// Resample a polyline to evenly-spaced points along its arc length
+    private func resampleDrawPath(_ points: [SIMD2<Float>], targetCount: Int) -> [SIMD2<Float>] {
+        guard points.count >= 2 else { return points }
+        
+        // Compute cumulative arc lengths
+        var lengths: [Float] = [0]
+        for i in 1..<points.count {
+            let dx = points[i].x - points[i-1].x
+            let dy = points[i].y - points[i-1].y
+            let d = sqrt(dx * dx + dy * dy)
+            lengths.append(lengths.last! + d)
+        }
+        let totalLength = lengths.last!
+        guard totalLength > 0 else { return points }
+        
+        var resampled: [SIMD2<Float>] = []
+        var srcIdx = 0
+        for i in 0..<targetCount {
+            let targetDist = totalLength * Float(i) / Float(targetCount - 1)
+            while srcIdx < lengths.count - 2 && lengths[srcIdx + 1] < targetDist {
+                srcIdx += 1
+            }
+            let segLen = lengths[srcIdx + 1] - lengths[srcIdx]
+            let frac = segLen > 0 ? (targetDist - lengths[srcIdx]) / segLen : 0
+            let p0 = points[srcIdx]
+            let p1 = points[min(srcIdx + 1, points.count - 1)]
+            resampled.append(p0 + (p1 - p0) * frac)
+        }
+        return resampled
+    }
+    
     private func orbitPatternForLineSubOrbit(_ subOrbit: Int) -> OrbitPattern {
         switch subOrbit {
         case 1: return .circle
@@ -1870,6 +1962,7 @@ final class MetaballSimulation {
         case 7: return .figure8
         case 8: return .wave
         case 9: return .polygon
+        case 10: return .draw
         default: return .circle
         }
     }
@@ -1886,6 +1979,7 @@ final class MetaballSimulation {
         case 7: return 2   // FIG8: lemniscate, 2 tracers going opposite ways
         case 8: return 2   // WAV: dual wave, 2 tracers
         case 9: return 1   // RAIN: single polygon tracer
+        case 10: return 1  // DRAW: single tracer follows user path
         default: return 1
         }
     }
@@ -2027,6 +2121,29 @@ final class MetaballSimulation {
                 }
             }
             
+        case .draw:
+            // Interpolate along user-drawn path, skipping NaN stroke separators
+            if drawPathSmoothed.count >= 2 {
+                let totalPoints = Float(drawPathSmoothed.count - 1)
+                var tc = t.truncatingRemainder(dividingBy: 1.0)
+                if tc < 0 { tc += 1.0 }
+                let idx = tc * totalPoints
+                let i0 = min(Int(idx), drawPathSmoothed.count - 2)
+                let i1 = i0 + 1
+                let p0 = drawPathSmoothed[i0]
+                let p1 = drawPathSmoothed[i1]
+                // If either point is NaN (stroke break), return NaN to signal skip
+                if p0.x.isNaN || p1.x.isNaN {
+                    px = Float.nan; py = Float.nan; pz = Float.nan
+                } else {
+                    let frac = idx - Float(i0)
+                    let p = p0 + (p1 - p0) * frac
+                    px = p.x; py = p.y; pz = p.z
+                }
+            } else {
+                px = 0; py = 0; pz = 0
+            }
+            
         default:
             px = r * cos(angle)
             pz = r * sin(angle)
@@ -2089,7 +2206,9 @@ final class MetaballSimulation {
         // a line from one end to the other when t wraps from ~1.0 back to ~0.0
         let isOpenCurve = (pattern == .wave || pattern == .dna || pattern == .spiral)
         let wrappedAround = (direction > 0 && newT < tracer.t - 0.5) || (direction < 0 && newT > tracer.t + 0.5)
-        let skipSegment = isOpenCurve && wrappedAround
+        // DRAW: skip segments at stroke breaks (NaN positions)
+        let drawBreak = (pattern == .draw) && (startPos.x.isNaN || endPos.x.isNaN)
+        let skipSegment = (isOpenCurve && wrappedAround) || drawBreak
         
         let b = tracer.brightness
         let color = SIMD4<Float>(lineBaseColor.x * b, lineBaseColor.y * b, lineBaseColor.z * b, 1.0)
@@ -2098,9 +2217,14 @@ final class MetaballSimulation {
         let segLen = length(endPos - startPos)
         let speed = max(segLen, 0.05) * Float.random(in: 120.0...200.0)
         
+        // Skip degenerate segments: NaN, enormous length, or coordinates far outside visible range
+        let hasNaN = startPos.x.isNaN || startPos.y.isNaN || startPos.z.isNaN ||
+                     endPos.x.isNaN || endPos.y.isNaN || endPos.z.isNaN
+        let tooLong = segLen > 1.0  // no valid single step should span more than the full scene
+        
         tracer.t = newT
         
-        if skipSegment {
+        if skipSegment || hasNaN || tooLong {
             // Don't append a segment — just update t and keep the old segment index
         } else {
             let segIndex = accumulatedLines.count
@@ -2199,7 +2323,11 @@ final class MetaballSimulation {
                 }
                 
             } else {
-                // --- Orbit path tracing mode (CRC, SPH, TOR, SPI, SAT, DNA, FIG8, WAV) ---
+                // --- Orbit path tracing mode (CRC, SPH, TOR, SPI, SAT, DNA, FIG8, WAV, DRAW) ---
+                
+                // DRAW mode: skip tracing while user is still drawing
+                if lineSubOrbit == 10 && !drawPathReady { /* waiting for user input */ }
+                else {
                 
                 let pattern = orbitPatternForLineSubOrbit(lineSubOrbit)
                 
@@ -2360,6 +2488,7 @@ final class MetaballSimulation {
                     }
                 }
             }
+            } // end DRAW guard else
             
             // Advance drawing progress — only check segments that might still be in-progress
             // Start from the end (newest) since older segments are almost certainly complete

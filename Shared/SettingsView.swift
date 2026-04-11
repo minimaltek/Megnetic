@@ -84,6 +84,7 @@ struct SettingsView: View {
     @Binding var rainDelayAmount: Double   // 0~1
     @Binding var rainCategory: Int       // 0=Fall, 1=PinBall
     var onLoadPreset: (() -> Void)? = nil
+    var onPreSavePreset: (() -> Void)? = nil
     var onSavePreset: ((Int, @escaping (PlatformImage?) -> Void) -> Void)? = nil
     var onCustomSoundSaved: ((Int) -> Void)? = nil   // slot 0-2 → reload REC buffer
     var onRecorderOpen: (() -> Void)? = nil            // stop audio before recording
@@ -95,8 +96,8 @@ struct SettingsView: View {
     
     private let basicModeNames = ["METABALL", "LINE", "BOX", "RAIN"]
     private let basicModeIcons = ["drop.fill", "line.3.horizontal", "square.grid.3x3.topleft.filled", "cloud.rain"]
-    private let orbitPatternNames = ["RND", "CRC", "SPH", "TOR", "SPI", "SAT", "DNA", "FIG8", "WAV", "RAIN"]
-    private let orbitPatternIcons = ["dice", "circle", "globe", "circle.circle", "hurricane", "atom", "lungs", "infinity", "water.waves", "hexagon"]
+    private let orbitPatternNames = ["RND", "CRC", "SPH", "TOR", "SPI", "SAT", "DNA", "FIG8", "WAV", "RAIN", "DRAW"]
+    private let orbitPatternIcons = ["dice", "circle", "globe", "circle.circle", "hurricane", "atom", "lungs", "infinity", "water.waves", "hexagon", "pencil.line"]
     
     private let boxNoiseNames = ["PERLIN", "VORONOI", "SIMPLEX", "FBM"]
     private let boxNoiseIcons = ["waveform", "circle.hexagongrid", "water.waves", "mountain.2"]
@@ -776,7 +777,9 @@ struct SettingsView: View {
                     
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            ForEach(0..<orbitPatternNames.count, id: \.self) { index in
+                            // DRAW (index 10) only available in LINE mode
+                            let patternCount = basicMode == 1 ? orbitPatternNames.count : orbitPatternNames.count - 1
+                            ForEach(0..<patternCount, id: \.self) { index in
                                 Button {
                                     orbitPattern = index
                                 } label: {
@@ -1461,6 +1464,7 @@ struct SettingsView: View {
                 }
             } else {
                 // Save preset + capture screenshot
+                onPreSavePreset?()
                 PresetManager.save(to: index)
                 slotOccupied[index] = true
                 onSavePreset?(index) { _ in

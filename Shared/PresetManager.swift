@@ -36,7 +36,11 @@ enum PresetManager {
         // RAIN delay
         "plyDelayEnabled", "plyDelaySync", "plyDelayFeedback", "plyDelayAmount",
         // RAIN category
-        "plyCategory"
+        "plyCategory",
+        // Per-mode BPM
+        "manualBPM_metaball", "manualBPM_line", "manualBPM_rain",
+        // RAIN block layout
+        "rainBlocksData"
     ]
     
     /// UserDefaults key for slot N
@@ -49,13 +53,22 @@ enum PresetManager {
         "preset_thumb_\(index)"
     }
     
+    /// Keys whose UserDefaults value is Data (not JSON-safe).
+    /// These are converted to Base64 strings before JSON serialisation.
+    private static let dataKeys: Set<String> = ["rainBlocksData"]
+    
     /// Save current AppStorage values into a slot
     static func save(to slotIndex: Int) {
         let defaults = UserDefaults.standard
         var dict: [String: Any] = [:]
         for key in settingKeys {
             if let value = defaults.object(forKey: key) {
-                dict[key] = value
+                if dataKeys.contains(key), let rawData = value as? Data {
+                    // Data is not JSON-serialisable — store as Base64 string
+                    dict[key] = rawData.base64EncodedString()
+                } else {
+                    dict[key] = value
+                }
             }
         }
         dict["_savedAt"] = Date().timeIntervalSince1970
@@ -104,7 +117,13 @@ enum PresetManager {
         let defaults = UserDefaults.standard
         for key in settingKeys {
             if let value = dict[key] {
-                defaults.set(value, forKey: key)
+                if dataKeys.contains(key), let b64 = value as? String,
+                   let restored = Data(base64Encoded: b64) {
+                    // Reverse the Base64 encoding done in save()
+                    defaults.set(restored, forKey: key)
+                } else {
+                    defaults.set(value, forKey: key)
+                }
             }
         }
     }

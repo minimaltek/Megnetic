@@ -97,6 +97,14 @@ final class CameraController {
         sequentialAxisIndex = (sequentialAxisIndex + 1) % Self.axisViews.count
     }
     
+    /// Force snap to front view (index 0), reset distance, and lock
+    func snapToFront() {
+        sequentialAxisIndex = 0
+        cameraDistance = 3.0
+        snapToNextAxis()
+        isLocked = true
+    }
+    
     /// Smoothly snap camera to the nearest axis-aligned view (front/back/left/right/top/bottom)
     func snapToNearestAxisView() {
         // Find closest by quaternion dot product (closest = largest |dot|)
@@ -183,7 +191,7 @@ final class CameraController {
         }
         let now = CACurrentMediaTime()
         let rotDx = dx * sensitivity
-        let rotDy = -dy * sensitivity  // invert Y: swipe up → look up
+        let rotDy = dy * sensitivity  // swipe up → camera orbits downward (natural globe feel)
         
         applyRotation(dx: rotDx, dy: rotDy)
         
